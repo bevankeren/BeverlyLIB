@@ -1145,6 +1145,12 @@ function SaveManager:BuildConfigSection(Tab: any, IconName: string)
     RefreshAutoloadConfigLabel()
     SaveManager:SetIgnoreIndexes({ "SaveManager_ConfigList", "SaveManager_ConfigName", "SaveManager_JSON" })
 
+    --// Hook the header's folder button (quick config menu) up to this manager
+    SaveManager.RefreshConfigUI = RefreshList
+    if Library.Window and Library.Window.SetQuickConfig then
+        Library.Window:SetQuickConfig(SaveManager)
+    end
+
     return ConfigurationBox
 end
 

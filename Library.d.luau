@@ -1323,6 +1323,8 @@ export type WindowAnimations = {
 export type WindowInfo = {
     Title: string?,
     Footer: string?,
+    Version: string? | number?,
+    ShowProfile: boolean?,
     Position: UDim2?,
     Size: UDim2?,
     Icon: string?,
@@ -1367,6 +1369,15 @@ export type WindowInfo = {
     SidebarMinWidth: number?,
 }
 
+export type TabCategory = {
+    Name: string,
+    Collapsed: boolean,
+    AddTab: (self: TabCategory, Info: TabInfo | string, Icon: string?, Description: string?, Order: number?) -> Tab,
+    SetCollapsed: (self: TabCategory, Collapsed: boolean) -> (),
+    Toggle: (self: TabCategory) -> (),
+    SetName: (self: TabCategory, Name: string) -> (),
+}
+
 export type Window = {
     AlwaysOnTop: boolean,
     Snapping: boolean?,
@@ -1380,6 +1391,11 @@ export type Window = {
     HideTabInfo: (self: Window) -> (),
     SetTabLayout: (self: Window, Layout: "Top" | "Side" | string) -> (),
     GetTabLayout: (self: Window) -> "Top" | "Side",
+    AddCategory: (self: Window, Info: string | { Name: string?, Collapsed: boolean?, Order: number? }) -> TabCategory,
+    SetSidebarVisible: (self: Window, Visible: boolean) -> (),
+    IsSidebarVisible: (self: Window) -> boolean,
+    SetQuickConfig: (self: Window, Provider: any) -> (),
+    SetProfile: (self: Window, Info: false | { Name: string?, Game: string? }) -> (),
     AddTab: (
         self: Window,
         Info: TabInfo | string,
@@ -1407,6 +1423,7 @@ export type Window = {
         Info: DialogInfo
     ) -> Dialog,
     ChangeTitle: (self: Window, Title: string) -> (),
+    SetVersion: (self: Window, Version: string? | number?) -> (),
     RefreshTitleSize: (self: Window) -> (),
     SetBackgroundImage: (self: Window, Image: string | number) -> (),
     SetUsername: (self: Window, Username: string?) -> (),

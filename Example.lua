@@ -12,13 +12,14 @@ local Toggles = Library.Toggles
 --// Window \\--
 local Window = Library:CreateWindow({
 	Title = "Alexandria",
+	Version = "0.0.0.2", -- muted line under the title; change later with Window:SetVersion
+	TabLayout = "Side", -- tabs in a column under the search bar (default); "Top" puts them in the header
 	Footer = "alexandria · example", -- centred
 	FooterLeft = "discord.gg/example", -- optional corner texts; change later with
 	FooterRight = "Build: dev", --         Window:SetFooterLeft / SetFooterRight
 
-	-- Header, right side: a muted name and a filled badge pill
+	-- Header, right side: a muted player name
 	Username = true, -- true shows the local player's name; a string shows that text
-	Badge = "Free", -- change later with Window:SetBadge("Premium"), nil hides it
 
 	NotifySide = "Right",
 
@@ -28,7 +29,7 @@ local Window = Library:CreateWindow({
 	-- ShowToggleButton = true,       -- round menu button (shown on mobile by default)
 	-- ToggleButtonIcon = "layout-grid",
 	-- MobileButtonsSide = "Right",   -- which edge the round button starts on
-	-- DisableSearch = false,         -- brings back the header search box
+	-- DisableSearch = true,          -- hides the header search box
 	-- Animations = { ToggleWindow = false }, -- instant hide instead of the fade
 })
 
@@ -36,16 +37,20 @@ local Window = Library:CreateWindow({
 
 --// Tabs \\--
 -- Icons are Lucide names: https://lucide.dev/
+-- Categories are collapsible headings in the sidebar; Category:AddTab takes the same arguments as Window:AddTab
+local Main = Window:AddCategory("Main")
+local Misc = Window:AddCategory({ Name = "Misc", Collapsed = false })
+
 local Tabs = {
-	Home = Window:AddTab("Home", "house"),
-	Pickers = Window:AddTab("Pickers", "list"),
-	Layout = Window:AddTab("Layout", "layout-panel-left"),
-	Key = Window:AddKeyTab("Key System"),
-	Settings = Window:AddTab("Settings", "settings"),
+	Home = Main:AddTab("Home", "house"),
+	Pickers = Main:AddTab("Pickers", "list"),
+	Layout = Main:AddTab("Layout", "layout-panel-left"),
+	Settings = Misc:AddTab("Settings", "settings"),
+	Key = Window:AddKeyTab("Key System"), -- tabs added straight to the Window sit outside any category
 }
 
 -- Sub-tabs sit in a strip above the content while their parent is open
-local Extras = Window:AddTab("Extras", "layers")
+local Extras = Misc:AddTab("Extras", "layers")
 local ExtrasGeneral = Extras:AddSubTab("General", "sliders-horizontal")
 local ExtrasMisc = Extras:AddSubTab("Misc", "shapes")
 
@@ -390,15 +395,6 @@ local Header = Tabs.Layout:AddGroupbox({
 	Side = "Right",
 	Name = "Header",
 	IconName = "panel-top",
-})
-
-Header:AddDropdown("BadgeText", {
-	Text = "Badge",
-	Values = { "Free", "Premium", "Beta", "None" },
-	Default = "Free",
-	Callback = function(Value)
-		Window:SetBadge(if Value == "None" then nil else Value)
-	end,
 })
 
 Header:AddInput("TitleText", {

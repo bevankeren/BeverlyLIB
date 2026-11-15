@@ -162,6 +162,7 @@ end
 
 local Library = {
     LocalPlayer = LocalPlayer,
+    QuickConfigProvider = nil :: any, --// set by Window:SetQuickConfig (SaveManager does it for you)
     IsRobloxFocused = true,
 
     --// Device \\--
@@ -382,6 +383,7 @@ local Templates = {
     Window = {
         Title = "No Title",
         Footer = "No Footer",
+        Version = nil, --// shown under the title, e.g. "0.0.0.2" -> "Version: 0.0.0.2"
 
         Position = UDim2.fromOffset(6, 6),
         Size = UDim2.fromOffset(580, 640),
@@ -400,7 +402,7 @@ local Templates = {
 
         SearchbarSize = UDim2.fromScale(1, 1),
         GlobalSearch = false,
-        DisableSearch = true,
+        DisableSearch = false,
 
         CornerRadius = 6,
         NotifySide = "Right",
@@ -444,8 +446,8 @@ local Templates = {
         TabTransitionTime = 0.22,
         TabSwipeOffset = 26,
         TabSwipeFrom = "bottom",
-        TabLayout = "Top", --// "Top" strip under the header, or "Side" column left of the content
-        SideTabsWidth = 150,
+        TabLayout = "Side", --// "Side" column left of the content (default), or "Top" strip in the header
+        SideTabsWidth = 180, --// matches the header search bar so the column lines up
         TabButtonsStyle = {
             Gap = 0,
             Padding = 0,
@@ -12047,11 +12049,15 @@ function Library:CreateWindow(WindowInfo)
 
     --// Shell layout: header, tab strip, content, footer
     local WindowPadding = 10
-    local HeaderHeight = 44
+    --// Header is two rows: [title / version | folder + tab picker (or tabs) | user] over [search | breadcrumb]
+    local HeaderRowHeight = 56
+    local HeaderHeight = HeaderRowHeight + 42
     local TabBarHeight = 30
     local FooterHeight = 28
-    local SearchWidth = 150
-    local ContentTop = HeaderHeight + TabBarHeight + 8
+    local SearchWidth = math.max(120, tonumber(WindowInfo.SideTabsWidth) or 180) --// sidebar column width
+    local SidebarWidth = WindowPadding * 2 + SearchWidth
+    local HeaderRightX = SidebarWidth + 12
+    local ContentTop = HeaderHeight + 6
 
     --// Grip sits in the footer's corner, inset further as the window corner rounds
     local function GetResizeGripPosition(Radius: number): UDim2
@@ -12092,6 +12098,7 @@ function Library:CreateWindow(WindowInfo)
     local DividerLine
     local TitleHolder
     local WindowTitle
+    local VersionLabel
     local WindowIcon
     local RightWrapper
     local UsernameLabel
@@ -12111,6 +12118,16 @@ function Library:CreateWindow(WindowInfo)
     local FooterLeftLabel
     local FooterRightLabel
     local TopBar
+    local SidebarPanel
+    local ProfileCard
+    local ProfileHeight = 52
+    local FolderButton
+    local TabPicker
+    local TabPickerLabel
+    local TabPickerMenu
+    local CloseTabPicker
+    local CloseQuickConfig
+    local ToggleSidebarCallback
     local WindowSnapConfig = {
         Enabled = WindowInfo.Snapping,
         Distance = WindowInfo.SnapDistance,
@@ -12119,6 +12136,7 @@ function Library:CreateWindow(WindowInfo)
     }
 
     local RefreshWindowTitleSize
+    local FitTopTabsBounds
 
     do
         local KeybindFrame, KeybindContainer, _, KeybindDivider, KeybindLabelPadding = Library:AddDraggableMenu("Keybinds")
@@ -12433,6 +12451,114 @@ function Library:CreateWindow(WindowInfo)
             MainFrame.Position = UDim2.new(0.5, -MainFrame.Size.X.Offset / 2, 0.5, -MainFrame.Size.Y.Offset / 2)
         end
 
+        --// Sidebar panel: a slightly lifted column behind the title, search and side tabs
+        SidebarPanel = New("Frame", {
+            BackgroundColor3 = "MainColor",
+            BackgroundTransparency = 0.45,
+            Size = UDim2.new(0, SidebarWidth, 1, 0),
+            Parent = MainFrame,
+        })
+        table.insert(
+            Library.Corners,
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = SidebarPanel,
+            })
+        )
+        --// Squares off the panel's right corners so only the window's outer corners stay round
+        New("Frame", {
+            AnchorPoint = Vector2.new(1, 0),
+            BackgroundColor3 = "MainColor",
+            BackgroundTransparency = 0.45,
+            BorderSizePixel = 0,
+            Position = UDim2.fromScale(1, 0),
+            Size = UDim2.new(0, 20, 1, 0),
+            Parent = SidebarPanel,
+        })
+        New("Frame", {
+            AnchorPoint = Vector2.new(1, 0),
+            BackgroundColor3 = "OutlineColor",
+            BorderSizePixel = 0,
+            Position = UDim2.fromScale(1, 0),
+            Size = UDim2.new(0, 1, 1, 0),
+            Parent = SidebarPanel,
+        })
+
+        --// Profile card at the bottom of the sidebar: avatar headshot, display name, current game
+        ProfileCard = New("Frame", {
+            AnchorPoint = Vector2.new(0, 1),
+            BackgroundColor3 = "MainColor",
+            Position = UDim2.new(0, WindowPadding, 1, -WindowPadding),
+            Size = UDim2.new(0, SearchWidth, 0, ProfileHeight),
+            Parent = SidebarPanel,
+        })
+        table.insert(
+            Library.Corners,
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = ProfileCard,
+            })
+        )
+        local AvatarImage = New("ImageLabel", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundColor3 = "BackgroundColor",
+            Position = UDim2.new(0, 8, 0.5, 0),
+            Size = UDim2.fromOffset(36, 36),
+            Parent = ProfileCard,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(1, 0),
+            Parent = AvatarImage,
+        })
+        local ProfileName = New("TextLabel", {
+            BackgroundTransparency = 1,
+            FontFace = "FontBold",
+            Position = UDim2.new(0, 52, 0.5, -15),
+            Size = UDim2.new(1, -60, 0, 15),
+            Text = LocalPlayer.DisplayName,
+            TextSize = 13,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = ProfileCard,
+        })
+        local ProfileGame = New("TextLabel", {
+            BackgroundTransparency = 1,
+            FontFace = "FontMedium",
+            Position = UDim2.new(0, 52, 0.5, 1),
+            Size = UDim2.new(1, -60, 0, 14),
+            Text = "",
+            TextColor3 = "MutedFontColor",
+            TextSize = 11,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = ProfileCard,
+        })
+        Library.ProfileName = ProfileName
+        Library.ProfileGame = ProfileGame
+
+        task.spawn(function()
+            local Ok, Image = pcall(function()
+                return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+            end)
+            if Ok and Image and AvatarImage.Parent then
+                AvatarImage.Image = Image
+            end
+        end)
+        task.spawn(function()
+            local GameName
+            if game.PlaceId ~= 0 then
+                local Ok, Info = pcall(function()
+                    local MarketplaceService = game:GetService("MarketplaceService")
+                    local GetInfo = (MarketplaceService :: any).GetProductInfoAsync or (MarketplaceService :: any).GetProductInfo
+                    return GetInfo(MarketplaceService, game.PlaceId)
+                end)
+                GameName = Ok and Info and Info.Name or nil
+            end
+            if ProfileGame.Parent and ProfileGame.Text == "" then
+                ProfileGame.Text = GameName or game.Name
+            end
+        end)
+
         --// Top Bar \\-
         TopBar = New("Frame", {
             BackgroundTransparency = 1,
@@ -12445,7 +12571,7 @@ function Library:CreateWindow(WindowInfo)
         TitleHolder = New("Frame", {
             BackgroundTransparency = 1,
             Position = UDim2.fromOffset(WindowPadding + 2, 0),
-            Size = UDim2.new(1, -WindowPadding * 2, 1, 0),
+            Size = UDim2.fromOffset(SearchWidth - 2, HeaderRowHeight),
             Parent = TopBar,
         })
         New("UIListLayout", {
@@ -12472,31 +12598,45 @@ function Library:CreateWindow(WindowInfo)
             })
         end
 
+        --// Title with the version stacked underneath
+        local TitleStack = New("Frame", {
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            LayoutOrder = 1,
+            Size = UDim2.fromOffset(0, 0),
+            Parent = TitleHolder,
+        })
+        New("UIListLayout", {
+            Padding = UDim.new(0, 1),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = TitleStack,
+        })
+
         WindowTitle = New("TextLabel", {
             BackgroundTransparency = 1,
             FontFace = "FontBold",
             LayoutOrder = 1,
-            Size = UDim2.fromOffset(0, 0),
+            Size = UDim2.new(1, 0, 0, 16),
             Text = WindowInfo.Title,
-            TextSize = 13,
+            TextSize = 15,
             TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
-            Parent = TitleHolder,
+            Parent = TitleStack,
         })
 
-        --// Current tab name, shown as a muted subtitle next to the title
-        CurrentTabLabel = New("TextLabel", {
-            AutomaticSize = Enum.AutomaticSize.X,
+        VersionLabel = New("TextLabel", {
             BackgroundTransparency = 1,
             FontFace = "FontMedium",
             LayoutOrder = 2,
-            Size = UDim2.fromScale(0, 1),
+            Size = UDim2.new(1, 0, 0, 12),
             Text = "",
             TextColor3 = "MutedFontColor",
-            TextSize = 13,
+            TextSize = 11,
+            TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = TitleHolder,
+            Visible = false,
+            Parent = TitleStack,
         })
 
         RefreshWindowTitleSize = function()
@@ -12505,19 +12645,33 @@ function Library:CreateWindow(WindowInfo)
                 IconWidth = WindowIcon.Size.X.Offset + 7
             end
 
-            local SubtitleWidth = CurrentTabLabel.Text ~= "" and (CurrentTabLabel.AbsoluteSize.X / Library.DPIScale) + 7 or 0
-            local MaxWidth = math.max(0, (TitleHolder.AbsoluteSize.X / Library.DPIScale) - IconWidth - SubtitleWidth)
-            local NaturalWidth = Library:GetTextBounds(WindowTitle.Text, WindowTitle.FontFace, WindowTitle.TextSize)
-            WindowTitle.Size = UDim2.new(0, math.min(NaturalWidth, MaxWidth), 1, 0)
+            local Width = math.max(0, (TitleHolder.AbsoluteSize.X / Library.DPIScale) - IconWidth)
+            TitleStack.Size = UDim2.fromOffset(Width, 0)
         end
         RefreshWindowTitleSize()
+        Library:GiveSignal(TitleHolder:GetPropertyChangedSignal("AbsoluteSize"):Connect(RefreshWindowTitleSize))
+
+        --// Breadcrumb under the tabs: "Parent › Tab" (or just "Tab")
+        CurrentTabLabel = New("TextLabel", {
+            BackgroundTransparency = 1,
+            FontFace = "FontMedium",
+            Position = UDim2.fromOffset(HeaderRightX + 2, HeaderRowHeight),
+            RichText = true,
+            Size = UDim2.new(1, -HeaderRightX - WindowPadding - 2, 0, 34),
+            Text = "",
+            TextColor3 = "MutedFontColor",
+            TextSize = 13,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = TopBar,
+        })
 
         --// Top Right Bar: [search] username [badge], right-aligned and sized to its content
         RightWrapper = New("Frame", {
             AnchorPoint = Vector2.new(1, 0.5),
             AutomaticSize = Enum.AutomaticSize.X,
             BackgroundTransparency = 1,
-            Position = UDim2.new(1, -WindowPadding, 0.5, 0),
+            Position = UDim2.new(1, -WindowPadding, 0, HeaderRowHeight / 2),
             Size = UDim2.fromOffset(0, 26),
             Parent = TopBar,
         })
@@ -12612,16 +12766,6 @@ function Library:CreateWindow(WindowInfo)
             Library:Toggle(false)
         end))
 
-        --// The title row gets whatever the right cluster leaves, so long titles truncate instead of overlapping
-        local function FitTitleHolder()
-            local RightWidth = RightWrapper.AbsoluteSize.X / Library.DPIScale
-            TitleHolder.Size = UDim2.new(1, -WindowPadding * 2 - 2 - (if RightWidth > 0 then RightWidth + 12 else 0), 1, 0)
-            if RefreshWindowTitleSize then
-                RefreshWindowTitleSize()
-            end
-        end
-        Library:GiveSignal(RightWrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(FitTitleHolder))
-        FitTitleHolder()
 
         --// Tab descriptions now surface as tooltips; these stay for API compatibility
         CurrentTabInfo = New("Frame", {
@@ -12638,15 +12782,16 @@ function Library:CreateWindow(WindowInfo)
 
         SearchBox = New("TextBox", {
             BackgroundColor3 = "MainColor",
-            BackgroundTransparency = 0.4,
+            BackgroundTransparency = 0,
             ClearTextOnFocus = false,
             LayoutOrder = 1,
             PlaceholderText = "Search",
-            Size = UDim2.new(0, SearchWidth, 1, 0),
+            Position = UDim2.fromOffset(WindowPadding, HeaderRowHeight),
+            Size = UDim2.fromOffset(SearchWidth, 34),
             TextSize = 13,
             TextXAlignment = Enum.TextXAlignment.Left,
             Visible = not WindowInfo.DisableSearch,
-            Parent = RightWrapper,
+            Parent = TopBar,
         })
         table.insert(
             Library.Corners,
@@ -12656,12 +12801,13 @@ function Library:CreateWindow(WindowInfo)
             })
         )
         New("UIPadding", {
-            PaddingLeft = UDim.new(0, 28),
+            PaddingLeft = UDim.new(0, 32),
             PaddingRight = UDim.new(0, 8),
             Parent = SearchBox,
         })
         local SearchBoxStroke = New("UIStroke", {
             Color = "OutlineColor",
+            Transparency = 1,
             Parent = SearchBox,
         })
 
@@ -12671,19 +12817,13 @@ function Library:CreateWindow(WindowInfo)
                 Color = Library.Scheme.AccentColor,
                 Transparency = 0.5,
             }):Play()
-            TweenService:Create(SearchBox, Library.HoverTweenInfo, {
-                BackgroundTransparency = 0,
-            }):Play()
         end))
 
         Library:GiveSignal(SearchBox.FocusLost:Connect(function()
             Library.Registry[SearchBoxStroke].Color = "OutlineColor"
             TweenService:Create(SearchBoxStroke, Library.HoverTweenInfo, {
                 Color = Library.Scheme.OutlineColor,
-                Transparency = 0,
-            }):Play()
-            TweenService:Create(SearchBox, Library.HoverTweenInfo, {
-                BackgroundTransparency = 0.4,
+                Transparency = 1,
             }):Play()
         end))
 
@@ -12692,23 +12832,662 @@ function Library:CreateWindow(WindowInfo)
             local SearchIconImage = New("ImageLabel", {
                 AnchorPoint = Vector2.new(0, 0.5),
                 ImageColor3 = "MutedFontColor",
-                Position = UDim2.new(0, -20, 0.5, 0),
-                Size = UDim2.fromOffset(13, 13),
+                Position = UDim2.new(0, -22, 0.5, 0),
+                Size = UDim2.fromOffset(14, 14),
                 Parent = SearchBox,
             })
             Library:ApplyLucideIcon(SearchIconImage, SearchIcon)
         end
+
+        --// Folder button (hides/shows the sidebar) and the tab picker, side layout only
+        local PickerY = HeaderRowHeight / 2
+        FolderButton = New("TextButton", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            AutoButtonColor = false,
+            BackgroundColor3 = "MainColor",
+            Position = UDim2.fromOffset(HeaderRightX, PickerY),
+            Size = UDim2.fromOffset(36, 36),
+            Text = "",
+            Parent = TopBar,
+        })
+        table.insert(
+            Library.Corners,
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = FolderButton,
+            })
+        )
+        local FolderImage = New("ImageLabel", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 1,
+            ImageColor3 = "FontColor",
+            ImageTransparency = 0.25,
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromOffset(16, 16),
+            Parent = FolderButton,
+        })
+        local FolderIcon = Library:GetIcon("folder-cog") or Library:GetIcon("folder")
+        if FolderIcon then
+            Library:ApplyLucideIcon(FolderImage, FolderIcon)
+        end
+        Library:GiveSignal(FolderButton.MouseEnter:Connect(function()
+            TweenService:Create(FolderImage, Library.HoverTweenInfo, { ImageTransparency = 0 }):Play()
+        end))
+        Library:GiveSignal(FolderButton.MouseLeave:Connect(function()
+            TweenService:Create(FolderImage, Library.HoverTweenInfo, { ImageTransparency = 0.25 }):Play()
+        end))
+        --// Quick config menu: wired up in the folder-button handler below
+        local ToggleQuickConfig
+        Library:GiveSignal(FolderButton.MouseButton1Click:Connect(function()
+            if Library.QuickConfigProvider then
+                ToggleQuickConfig()
+            elseif ToggleSidebarCallback then
+                ToggleSidebarCallback()
+            end
+        end))
+
+        TabPicker = New("TextButton", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            AutoButtonColor = false,
+            BackgroundColor3 = "MainColor",
+            Position = UDim2.fromOffset(HeaderRightX + 44, PickerY),
+            Size = UDim2.fromOffset(210, 36),
+            Text = "",
+            Parent = TopBar,
+        })
+        table.insert(
+            Library.Corners,
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = TabPicker,
+            })
+        )
+        TabPickerLabel = New("TextLabel", {
+            BackgroundTransparency = 1,
+            FontFace = "FontMedium",
+            Position = UDim2.fromOffset(13, 0),
+            Size = UDim2.new(1, -44, 1, 0),
+            Text = "",
+            TextSize = 13,
+            TextTransparency = 0.15,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = TabPicker,
+        })
+        local PickerChevron = New("ImageLabel", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundTransparency = 1,
+            ImageColor3 = "MutedFontColor",
+            Position = UDim2.new(1, -12, 0.5, 0),
+            Size = UDim2.fromOffset(14, 14),
+            Parent = TabPicker,
+        })
+        local ChevronIcon = Library:GetIcon("chevron-down")
+        if ChevronIcon then
+            Library:ApplyLucideIcon(PickerChevron, ChevronIcon)
+        end
+
+        TabPickerMenu = New("Frame", {
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = "BackgroundColor",
+            Position = UDim2.fromOffset(HeaderRightX + 44, PickerY + 22),
+            Size = UDim2.fromOffset(210, 0),
+            Visible = false,
+            ZIndex = 50,
+            Parent = MainFrame,
+        })
+        table.insert(
+            Library.Corners,
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = TabPickerMenu,
+            })
+        )
+        New("UIStroke", {
+            Color = "OutlineColor",
+            Parent = TabPickerMenu,
+        })
+        New("UIListLayout", {
+            Padding = UDim.new(0, 2),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = TabPickerMenu,
+        })
+        New("UIPadding", {
+            PaddingBottom = UDim.new(0, 4),
+            PaddingLeft = UDim.new(0, 4),
+            PaddingRight = UDim.new(0, 4),
+            PaddingTop = UDim.new(0, 4),
+            Parent = TabPickerMenu,
+        })
+
+        --// Tabs that share the active tab's parent, category or (when uncategorised) the top level
+        local function GetSiblingTabs()
+            local Active = Library.ActiveTab
+            local List = {}
+            if not Active then
+                return List
+            end
+            if Active.ParentTab then
+                for _, SubTab in Active.ParentTab.SubTabs do
+                    table.insert(List, SubTab)
+                end
+            else
+                for _, Tab in Library.Tabs do
+                    if not Tab.ParentTab and Tab.Category == Active.Category and Tab.Button and Tab.Button.Visible then
+                        table.insert(List, Tab)
+                    end
+                end
+            end
+            table.sort(List, function(A, B)
+                return A.Button.LayoutOrder < B.Button.LayoutOrder
+            end)
+            return List
+        end
+
+        CloseTabPicker = function()
+            TabPickerMenu.Visible = false
+            TweenService:Create(PickerChevron, Library.HoverTweenInfo, { Rotation = 0 }):Play()
+        end
+
+        local function OpenTabPicker()
+            if CloseQuickConfig then
+                CloseQuickConfig()
+            end
+            for _, Child in TabPickerMenu:GetChildren() do
+                if Child:IsA("TextButton") then
+                    Child:Destroy()
+                end
+            end
+
+            for Index, Tab in GetSiblingTabs() do
+                local IsActive = Library.ActiveTab == Tab
+                local Item = New("TextButton", {
+                    AutoButtonColor = false,
+                    BackgroundColor3 = "MainColor",
+                    BackgroundTransparency = IsActive and 0 or 1,
+                    FontFace = "FontMedium",
+                    LayoutOrder = Index,
+                    Size = UDim2.new(1, 0, 0, 28),
+                    Text = Tab.Name,
+                    TextSize = 13,
+                    TextTransparency = IsActive and 0 or 0.4,
+                    TextTruncate = Enum.TextTruncate.AtEnd,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    ZIndex = 51,
+                    Parent = TabPickerMenu,
+                })
+                New("UICorner", {
+                    CornerRadius = UDim.new(0, math.max(0, WindowInfo.CornerRadius - 2)),
+                    Parent = Item,
+                })
+                New("UIPadding", {
+                    PaddingLeft = UDim.new(0, 9),
+                    PaddingRight = UDim.new(0, 9),
+                    Parent = Item,
+                })
+                Item.MouseEnter:Connect(function()
+                    if Library.ActiveTab ~= Tab then
+                        TweenService:Create(Item, Library.HoverTweenInfo, { BackgroundTransparency = 0.5, TextTransparency = 0.1 }):Play()
+                    end
+                end)
+                Item.MouseLeave:Connect(function()
+                    if Library.ActiveTab ~= Tab then
+                        TweenService:Create(Item, Library.HoverTweenInfo, { BackgroundTransparency = 1, TextTransparency = 0.4 }):Play()
+                    end
+                end)
+                Item.MouseButton1Click:Connect(function()
+                    CloseTabPicker()
+                    Tab:Show()
+                end)
+            end
+
+            TabPickerMenu.Visible = true
+            TweenService:Create(PickerChevron, Library.HoverTweenInfo, { Rotation = 180 }):Play()
+        end
+
+        Library:GiveSignal(TabPicker.MouseButton1Click:Connect(function()
+            if TabPickerMenu.Visible then
+                CloseTabPicker()
+            else
+                OpenTabPicker()
+            end
+        end))
+
+        --// Quick config popover: a searchable list of saved configs that load on click \\--
+        local QuickWidth = 260
+        local QuickMenu = New("Frame", {
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = "BackgroundColor",
+            Position = UDim2.fromOffset(HeaderRightX, PickerY + 24),
+            Size = UDim2.fromOffset(QuickWidth, 0),
+            Visible = false,
+            ZIndex = 50,
+            Parent = MainFrame,
+        })
+        table.insert(
+            Library.Corners,
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius + 2),
+                Parent = QuickMenu,
+            })
+        )
+        New("UIStroke", {
+            Color = "OutlineColor",
+            Parent = QuickMenu,
+        })
+        New("UIListLayout", {
+            Padding = UDim.new(0, 8),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = QuickMenu,
+        })
+        New("UIPadding", {
+            PaddingBottom = UDim.new(0, 10),
+            PaddingLeft = UDim.new(0, 10),
+            PaddingRight = UDim.new(0, 10),
+            PaddingTop = UDim.new(0, 10),
+            Parent = QuickMenu,
+        })
+
+        local function QuickIconButton(IconName: string, Order: number, Parent: Instance, Size: number?)
+            local Button = New("TextButton", {
+                AutoButtonColor = false,
+                BackgroundColor3 = "MainColor",
+                LayoutOrder = Order,
+                Size = UDim2.fromOffset(Size or 30, Size or 30),
+                Text = "",
+                ZIndex = 51,
+                Parent = Parent,
+            })
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = Button,
+            })
+            local Image = New("ImageLabel", {
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                BackgroundTransparency = 1,
+                ImageColor3 = "FontColor",
+                ImageTransparency = 0.25,
+                Position = UDim2.fromScale(0.5, 0.5),
+                Size = UDim2.fromOffset(15, 15),
+                ZIndex = 52,
+                Parent = Button,
+            })
+            local Icon = Library:GetIcon(IconName)
+            if Icon then
+                Library:ApplyLucideIcon(Image, Icon)
+            end
+            Button.MouseEnter:Connect(function()
+                TweenService:Create(Image, Library.HoverTweenInfo, { ImageTransparency = 0 }):Play()
+            end)
+            Button.MouseLeave:Connect(function()
+                TweenService:Create(Image, Library.HoverTweenInfo, { ImageTransparency = 0.25 }):Play()
+            end)
+            return Button, Image
+        end
+
+        --// Row 1: "Presets" label pill, then save-new and copy-to-clipboard buttons
+        local QuickTop = New("Frame", {
+            BackgroundTransparency = 1,
+            LayoutOrder = 1,
+            Size = UDim2.new(1, 0, 0, 30),
+            ZIndex = 51,
+            Parent = QuickMenu,
+        })
+        local PresetsPill = New("Frame", {
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundColor3 = "MainColor",
+            Size = UDim2.fromOffset(0, 30),
+            ZIndex = 51,
+            Parent = QuickTop,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+            Parent = PresetsPill,
+        })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 10),
+            PaddingRight = UDim.new(0, 12),
+            Parent = PresetsPill,
+        })
+        New("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            Padding = UDim.new(0, 8),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Parent = PresetsPill,
+        })
+        local PresetsIcon = New("ImageLabel", {
+            BackgroundTransparency = 1,
+            ImageColor3 = "FontColor",
+            Size = UDim2.fromOffset(15, 15),
+            ZIndex = 52,
+            Parent = PresetsPill,
+        })
+        local CloudIcon = Library:GetIcon("cloud-upload") or Library:GetIcon("layers")
+        if CloudIcon then
+            Library:ApplyLucideIcon(PresetsIcon, CloudIcon)
+        end
+        New("TextLabel", {
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            FontFace = "FontBold",
+            LayoutOrder = 1,
+            Size = UDim2.fromScale(0, 1),
+            Text = "Presets",
+            TextSize = 13,
+            ZIndex = 52,
+            Parent = PresetsPill,
+        })
+
+        local QuickActions = New("Frame", {
+            AnchorPoint = Vector2.new(1, 0),
+            AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundTransparency = 1,
+            Position = UDim2.fromScale(1, 0),
+            Size = UDim2.fromOffset(0, 30),
+            ZIndex = 51,
+            Parent = QuickTop,
+        })
+        New("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            Padding = UDim.new(0, 6),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = QuickActions,
+        })
+        local QuickSaveButton = QuickIconButton("plus", 1, QuickActions)
+        local QuickCopyButton = QuickIconButton("clipboard-copy", 2, QuickActions)
+
+        --// Row 2: filter box + sort toggle
+        local QuickSearchRow = New("Frame", {
+            BackgroundTransparency = 1,
+            LayoutOrder = 2,
+            Size = UDim2.new(1, 0, 0, 32),
+            ZIndex = 51,
+            Parent = QuickMenu,
+        })
+        local QuickSearch = New("TextBox", {
+            BackgroundColor3 = "MainColor",
+            ClearTextOnFocus = false,
+            PlaceholderText = "Search",
+            Size = UDim2.new(1, -38, 1, 0),
+            Text = "",
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 51,
+            Parent = QuickSearchRow,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+            Parent = QuickSearch,
+        })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 30),
+            PaddingRight = UDim.new(0, 8),
+            Parent = QuickSearch,
+        })
+        local QuickSearchIcon = New("ImageLabel", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            ImageColor3 = "MutedFontColor",
+            Position = UDim2.new(0, -21, 0.5, 0),
+            Size = UDim2.fromOffset(14, 14),
+            ZIndex = 52,
+            Parent = QuickSearch,
+        })
+        if SearchIcon then
+            Library:ApplyLucideIcon(QuickSearchIcon, SearchIcon)
+        end
+        local QuickSortButton, QuickSortImage = QuickIconButton("arrow-down-wide-narrow", 1, QuickSearchRow, 32)
+        QuickSortButton.AnchorPoint = Vector2.new(1, 0)
+        QuickSortButton.Position = UDim2.fromScale(1, 0)
+        QuickSortButton.BackgroundTransparency = 1
+
+        --// Row 3: the configs themselves
+        local QuickList = New("ScrollingFrame", {
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            CanvasSize = UDim2.fromScale(0, 0),
+            LayoutOrder = 3,
+            ScrollBarThickness = 2,
+            ScrollBarImageColor3 = "OutlineColor",
+            Size = UDim2.new(1, 0, 0, 30),
+            ZIndex = 51,
+            Parent = QuickMenu,
+        })
+        local QuickListLayout = New("UIListLayout", {
+            Padding = UDim.new(0, 2),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = QuickList,
+        })
+
+        local SortDescending = false
+        local RefreshQuickList
+
+        local function QuickNotify(Text: string)
+            Library:Notify(Text)
+        end
+
+        RefreshQuickList = function()
+            for _, Child in QuickList:GetChildren() do
+                if Child:IsA("GuiObject") then
+                    Child:Destroy()
+                end
+            end
+
+            local Provider = Library.QuickConfigProvider
+            local Names = {}
+            if Provider then
+                local Ok, Result = pcall(Provider.RefreshConfigList, Provider)
+                if Ok and typeof(Result) == "table" then
+                    Names = Result
+                end
+            end
+
+            local Filter = string.lower(Trim(QuickSearch.Text))
+            local Shown = {}
+            for _, Name in Names do
+                if Filter == "" or string.find(string.lower(Name), Filter, 1, true) then
+                    table.insert(Shown, Name)
+                end
+            end
+            table.sort(Shown, function(A, B)
+                if SortDescending then
+                    return string.lower(A) > string.lower(B)
+                end
+                return string.lower(A) < string.lower(B)
+            end)
+
+            if #Shown == 0 then
+                New("TextLabel", {
+                    BackgroundTransparency = 1,
+                    FontFace = "FontMedium",
+                    Size = UDim2.new(1, 0, 0, 30),
+                    Text = if #Names == 0 then "No Configs Yet" else "No matches",
+                    TextColor3 = "MutedFontColor",
+                    TextSize = 13,
+                    ZIndex = 52,
+                    Parent = QuickList,
+                })
+            end
+
+            for Index, Name in Shown do
+                local Row = New("TextButton", {
+                    AutoButtonColor = false,
+                    BackgroundColor3 = "MainColor",
+                    BackgroundTransparency = 1,
+                    FontFace = "FontMedium",
+                    LayoutOrder = Index,
+                    Size = UDim2.new(1, -4, 0, 30),
+                    Text = Name,
+                    TextSize = 13,
+                    TextTransparency = 0.2,
+                    TextTruncate = Enum.TextTruncate.AtEnd,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    ZIndex = 52,
+                    Parent = QuickList,
+                })
+                New("UICorner", {
+                    CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                    Parent = Row,
+                })
+                New("UIPadding", {
+                    PaddingLeft = UDim.new(0, 10),
+                    PaddingRight = UDim.new(0, 10),
+                    Parent = Row,
+                })
+                Row.MouseEnter:Connect(function()
+                    TweenService:Create(Row, Library.HoverTweenInfo, { BackgroundTransparency = 0, TextTransparency = 0 }):Play()
+                end)
+                Row.MouseLeave:Connect(function()
+                    TweenService:Create(Row, Library.HoverTweenInfo, { BackgroundTransparency = 1, TextTransparency = 0.2 }):Play()
+                end)
+                Row.MouseButton1Click:Connect(function()
+                    local Current = Library.QuickConfigProvider
+                    if not Current then
+                        return
+                    end
+                    local Ok, Success, Err = pcall(Current.Load, Current, Name)
+                    if Ok and Success then
+                        QuickNotify(string.format("Loaded config %q", Name))
+                        CloseQuickConfig()
+                    else
+                        QuickNotify(string.format("Failed to load %q: %s", Name, tostring(if Ok then Err else Success)))
+                    end
+                end)
+            end
+
+            --// Show up to six rows before scrolling
+            local Rows = math.max(1, math.min(#Shown, 6))
+            QuickList.Size = UDim2.new(1, 0, 0, Rows * 30 + (Rows - 1) * 2)
+        end
+        Library:GiveSignal(QuickSearch:GetPropertyChangedSignal("Text"):Connect(function()
+            if QuickMenu.Visible then
+                RefreshQuickList()
+            end
+        end))
+        local _ = QuickListLayout
+
+        Library:GiveSignal(QuickSortButton.MouseButton1Click:Connect(function()
+            SortDescending = not SortDescending
+            TweenService:Create(QuickSortImage, Library.HoverTweenInfo, { Rotation = SortDescending and 180 or 0 }):Play()
+            RefreshQuickList()
+        end))
+
+        --// "+" saves the current settings as a new config, named from the search box when it has text
+        Library:GiveSignal(QuickSaveButton.MouseButton1Click:Connect(function()
+            local Provider = Library.QuickConfigProvider
+            if not Provider then
+                return
+            end
+            local Existing = {}
+            local Ok, Names = pcall(Provider.RefreshConfigList, Provider)
+            if Ok and typeof(Names) == "table" then
+                for _, Name in Names do
+                    Existing[string.lower(Name)] = true
+                end
+            end
+
+            local Typed = Trim(QuickSearch.Text)
+            local BaseName = if Typed ~= "" and string.lower(Typed) ~= "autoload" then Typed else "Config"
+            local Name, Suffix = BaseName, 1
+            if BaseName == "Config" or Existing[string.lower(Name)] then
+                repeat
+                    Name = string.format("%s %d", BaseName, Suffix)
+                    Suffix += 1
+                until not Existing[string.lower(Name)]
+            end
+
+            local SaveOk, Success, Err = pcall(Provider.Save, Provider, Name)
+            if SaveOk and Success then
+                QuickNotify(string.format("Saved config %q", Name))
+                QuickSearch.Text = ""
+                if Provider.RefreshConfigUI then
+                    pcall(Provider.RefreshConfigUI)
+                end
+            else
+                QuickNotify(string.format("Failed to save config: %s", tostring(if SaveOk then Err else Success)))
+            end
+            RefreshQuickList()
+        end))
+
+        --// Clipboard: copies the current settings as JSON
+        Library:GiveSignal(QuickCopyButton.MouseButton1Click:Connect(function()
+            local Provider = Library.QuickConfigProvider
+            if not (Provider and Provider.SaveJSON) then
+                return
+            end
+            local Ok, Data, Success, Err = pcall(Provider.SaveJSON, Provider)
+            if not (Ok and Success) then
+                QuickNotify(string.format("Failed to export config: %s", tostring(if Ok then Err else Data)))
+                return
+            end
+            local Clipboard = (getgenv and getgenv().setclipboard) or rawget(_G, "setclipboard")
+            if typeof(Clipboard) == "function" then
+                Clipboard(Data)
+                QuickNotify("Copied the current config to your clipboard")
+            else
+                QuickNotify("Clipboard isn't available here")
+            end
+        end))
+
+        CloseQuickConfig = function()
+            QuickMenu.Visible = false
+        end
+        ToggleQuickConfig = function()
+            if QuickMenu.Visible then
+                CloseQuickConfig()
+                return
+            end
+            CloseTabPicker()
+            RefreshQuickList()
+            QuickMenu.Visible = true
+        end
+        Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input)
+            if not QuickMenu.Visible then
+                return
+            end
+            if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+            local Position = Vector2.new(Input.Position.X, Input.Position.Y)
+            local P, S = QuickMenu.AbsolutePosition, QuickMenu.AbsoluteSize
+            local B, BS = FolderButton.AbsolutePosition, FolderButton.AbsoluteSize
+            local InMenu = Position.X >= P.X and Position.X <= P.X + S.X and Position.Y >= P.Y and Position.Y <= P.Y + S.Y
+            local InButton = Position.X >= B.X and Position.X <= B.X + BS.X and Position.Y >= B.Y and Position.Y <= B.Y + BS.Y
+            if not (InMenu or InButton) then
+                CloseQuickConfig()
+            end
+        end))
+
+        --// Clicking anywhere outside the picker closes it
+        local function IsInside(Gui: GuiObject, Position: Vector2): boolean
+            local P, S = Gui.AbsolutePosition, Gui.AbsoluteSize
+            return Position.X >= P.X and Position.X <= P.X + S.X and Position.Y >= P.Y and Position.Y <= P.Y + S.Y
+        end
+        Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input)
+            if not TabPickerMenu.Visible then
+                return
+            end
+            if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+            local Position = Vector2.new(Input.Position.X, Input.Position.Y)
+            if not (IsInside(TabPickerMenu, Position) or IsInside(TabPicker, Position)) then
+                CloseTabPicker()
+            end
+        end))
 
         --// Tabs \\--
         Tabs = New("ScrollingFrame", {
             AutomaticCanvasSize = Enum.AutomaticSize.X,
             BackgroundTransparency = 1,
             CanvasSize = UDim2.fromScale(0, 0),
-            Position = UDim2.fromOffset(WindowPadding, HeaderHeight),
+            Position = UDim2.fromOffset(HeaderRightX, (HeaderRowHeight - TabBarHeight) / 2),
             ScrollBarImageTransparency = 1,
             ScrollBarThickness = 0,
             ScrollingDirection = Enum.ScrollingDirection.X,
-            Size = UDim2.new(1, -WindowPadding * 2, 0, TabBarHeight),
+            Size = UDim2.new(1, -HeaderRightX - WindowPadding, 0, TabBarHeight),
             Parent = MainFrame,
         })
         TabsListLayout = New("UIListLayout", {
@@ -12724,6 +13503,19 @@ function Library:CreateWindow(WindowInfo)
         })
 
         --// Container \\--
+        --// The top tab strip gets whatever the right cluster leaves on the first header row
+        local function FitTopTabs()
+            if WindowInfo.TabLayout == "Side" then
+                return
+            end
+            local RightWidth = RightWrapper.AbsoluteSize.X / Library.DPIScale
+            Tabs.Position = UDim2.fromOffset(HeaderRightX, (HeaderRowHeight - TabBarHeight) / 2)
+            Tabs.Size = UDim2.new(1, -HeaderRightX - WindowPadding - (if RightWidth > 0 then RightWidth + 10 else 0), 0, TabBarHeight)
+        end
+        FitTopTabsBounds = FitTopTabs
+        Library:GiveSignal(RightWrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(FitTopTabs))
+        FitTopTabs()
+
         Container = New("Frame", {
             BackgroundTransparency = 1,
             ClipsDescendants = true,
@@ -12838,6 +13630,18 @@ function Library:CreateWindow(WindowInfo)
     function Window:RefreshTitleSize()
         RefreshWindowTitleSize()
     end
+
+    --// Muted line under the title; nil/"" hides it. Bare versions ("1.2", "v1.2") get a "Version: " prefix
+    function Window:SetVersion(Version: any)
+        WindowInfo.Version = Version
+        local Text = if Version == nil then "" else tostring(Version)
+        if Text ~= "" and Text:match("^v?[%d%.]+") == Text then
+            Text = "Version: " .. Text
+        end
+        VersionLabel.Text = Text
+        VersionLabel.Visible = Text ~= ""
+    end
+    Window:SetVersion(WindowInfo.Version)
 
     function Window:SetBackgroundImage(Image: string)
         local ValidIcon = false
@@ -13080,6 +13884,27 @@ function Library:CreateWindow(WindowInfo)
         local Side = WindowInfo.TabLayout == "Side"
         Entry.Button.AutomaticSize = if Side then Enum.AutomaticSize.None else Enum.AutomaticSize.X
         Entry.Button.Size = if Side then UDim2.new(1, 0, 0, TabBarHeight) else UDim2.fromOffset(0, TabBarHeight - 4)
+        if Entry.Bar then
+            Entry.Bar.Visible = Side
+            Entry.Padding.PaddingLeft = UDim.new(0, if Side then 2 else 11)
+        end
+        if Entry.Refresh then
+            Entry.Refresh()
+        end
+    end
+
+    --// Categories: collapsible headings in the side column that group tabs
+    local Categories = {}
+
+    local function ApplyCategoryLayout(Category)
+        local Side = WindowInfo.TabLayout == "Side"
+        Category.Header.Visible = Side
+        Category.ItemsLayout.FillDirection = if Side then Enum.FillDirection.Vertical else Enum.FillDirection.Horizontal
+        Category.Holder.AutomaticSize = if Side then Enum.AutomaticSize.Y else Enum.AutomaticSize.XY
+        Category.Holder.Size = if Side then UDim2.new(1, 0, 0, 0) else UDim2.fromOffset(0, TabBarHeight)
+        Category.Items.AutomaticSize = if Side then Enum.AutomaticSize.Y else Enum.AutomaticSize.XY
+        Category.Items.Size = if Side then UDim2.new(1, 0, 0, 0) else UDim2.fromOffset(0, TabBarHeight)
+        Category.Items.Visible = not (Side and Category.Collapsed)
     end
 
     --// Swaps the tab buttons between the top strip and a column left of the content
@@ -13090,35 +13915,58 @@ function Library:CreateWindow(WindowInfo)
         --// Side column starts a gap below the header so the first button's outline isn't clipped
         local SideTop = HeaderHeight + 8
         local BodyHeight = SideTop + FooterHeight
-        if Layout == "Side" then
-            local SideWidth = WindowInfo.SideTabsWidth
+        local Side = Layout == "Side"
+        local SidebarShown = Side and not Window.SidebarHidden
+        SidebarPanel.Visible = SidebarShown
+        --// The profile card takes the footer's left corner while the sidebar is showing
+        ProfileCard.Visible = WindowInfo.ShowProfile ~= false
+        FooterLeftLabel.Visible = not (SidebarShown and ProfileCard.Visible)
+        FolderButton.Visible = Side
+        TabPicker.Visible = Side
+        CloseTabPicker()
+        CloseQuickConfig()
+        Tabs.Visible = not Side or SidebarShown
+        if Side then
             Tabs.AutomaticCanvasSize = Enum.AutomaticSize.Y
             Tabs.ScrollingDirection = Enum.ScrollingDirection.Y
             Tabs.Position = UDim2.fromOffset(WindowPadding, SideTop)
-            Tabs.Size = UDim2.new(0, SideWidth, 1, -BodyHeight)
+            local ShowProfile = ProfileCard.Visible
+            local ProfileSpace = if ShowProfile then ProfileHeight + WindowPadding + 8 else FooterHeight
+            Tabs.Size = UDim2.new(0, SearchWidth, 1, -SideTop - ProfileSpace)
             TabsListLayout.FillDirection = Enum.FillDirection.Vertical
             TabsListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
             TabsPadding.PaddingTop = UDim.new(0, 1)
             TabsPadding.PaddingBottom = UDim.new(0, 1)
-            Container.Position = UDim2.fromOffset(WindowPadding * 2 + SideWidth, SideTop)
-            Container.Size = UDim2.new(1, -WindowPadding * 3 - SideWidth, 1, -BodyHeight)
+            local Left = if SidebarShown then HeaderRightX else WindowPadding
+            Container.Position = UDim2.fromOffset(Left, SideTop)
+            Container.Size = UDim2.new(1, -Left - WindowPadding, 1, -BodyHeight)
         else
             Tabs.AutomaticCanvasSize = Enum.AutomaticSize.X
             Tabs.ScrollingDirection = Enum.ScrollingDirection.X
-            Tabs.Position = UDim2.fromOffset(WindowPadding, HeaderHeight)
-            Tabs.Size = UDim2.new(1, -WindowPadding * 2, 0, TabBarHeight)
             TabsListLayout.FillDirection = Enum.FillDirection.Horizontal
             TabsListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
             TabsPadding.PaddingTop = UDim.new(0, 0)
             TabsPadding.PaddingBottom = UDim.new(0, 0)
             Container.Position = UDim2.fromOffset(WindowPadding, ContentTop)
             Container.Size = UDim2.new(1, -WindowPadding * 2, 1, -ContentTop - FooterHeight)
+            FitTopTabsBounds()
         end
         Tabs.CanvasPosition = Vector2.zero
+
+        for _, Category in Categories do
+            ApplyCategoryLayout(Category)
+        end
 
         for _, Entry in Library.TabButtons do
             if typeof(Entry) == "table" and Entry.Button then
                 ApplyTabButtonLayout(Entry)
+            end
+        end
+
+        --// Re-apply the selected look (pill vs accent bar) for the new layout
+        for _, Tab in Library.Tabs do
+            if Tab.SetSelected and Tab.Selected ~= nil then
+                Tab:SetSelected(Tab.Selected)
             end
         end
 
@@ -13131,8 +13979,55 @@ function Library:CreateWindow(WindowInfo)
         return WindowInfo.TabLayout
     end
 
-    function Window:ShowTabInfo(Name, Description)
-        CurrentTabLabel.Text = Name
+    --// Folder button: hides the side column so the content gets the full width
+    function Window:SetSidebarVisible(Visible: boolean)
+        Window.SidebarHidden = Visible == false
+        Window:SetTabLayout(WindowInfo.TabLayout)
+    end
+
+    --// Profile card: Window:SetProfile({ Name = "...", Game = "..." }); false hides it
+    function Window:SetProfile(Info: any)
+        if Info == false then
+            WindowInfo.ShowProfile = false
+        else
+            WindowInfo.ShowProfile = true
+            if typeof(Info) == "table" then
+                if Info.Name then
+                    Library.ProfileName.Text = tostring(Info.Name)
+                end
+                if Info.Game then
+                    Library.ProfileGame.Text = tostring(Info.Game)
+                end
+            end
+        end
+        Window:SetTabLayout(WindowInfo.TabLayout)
+    end
+
+    --// The folder button's quick config menu talks to this (SaveManager registers itself).
+    --// Provider needs RefreshConfigList(), Save(Name), Load(Name); SaveJSON() and RefreshConfigUI() are optional.
+    function Window:SetQuickConfig(Provider: any)
+        Library.QuickConfigProvider = Provider
+        CloseQuickConfig()
+    end
+
+    function Window:IsSidebarVisible(): boolean
+        return not Window.SidebarHidden
+    end
+
+    ToggleSidebarCallback = function()
+        Window:SetSidebarVisible(Window.SidebarHidden == true)
+    end
+
+    function Window:ShowTabInfo(Name, Description, ParentName)
+        local function Escape(Text)
+            return (tostring(Text or ""):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+        end
+        local Bright = '<font color="#' .. Library.Scheme.FontColor:ToHex() .. '">'
+        CurrentTabLabel.Text = if ParentName and ParentName ~= ""
+            then Bright .. Escape(ParentName) .. "</font>  ›  " .. Escape(Name)
+            else Bright .. Escape(Name) .. "</font>"
+        TabPickerLabel.Text = tostring(Name or "")
+        CloseTabPicker()
         CurrentTabDescription.Text = Description or ""
         RefreshWindowTitleSize()
     end
@@ -13140,7 +14035,7 @@ function Library:CreateWindow(WindowInfo)
     function Window:HideTabInfo() end
 
     --// Tab strip pill: icon + label, filled and outlined while active
-    local function CreateTabButton(Name, Icon, Order, Parent)
+    local function CreateTabButton(Name, Icon, Order, Parent, ButtonParent)
         local TabButton = New("TextButton", {
             AutomaticSize = Enum.AutomaticSize.X,
             BackgroundColor3 = "MainColor",
@@ -13148,7 +14043,7 @@ function Library:CreateWindow(WindowInfo)
             Size = UDim2.fromOffset(0, TabBarHeight - 4),
             Text = "",
             LayoutOrder = Order,
-            Parent = Parent or Tabs,
+            Parent = Parent or ButtonParent or Tabs,
         })
         table.insert(
             Library.Corners,
@@ -13170,10 +14065,28 @@ function Library:CreateWindow(WindowInfo)
         })
         New("UIListLayout", {
             FillDirection = Enum.FillDirection.Horizontal,
-            Padding = UDim.new(0, 7),
+            Padding = UDim.new(0, 9),
+            SortOrder = Enum.SortOrder.LayoutOrder,
             VerticalAlignment = Enum.VerticalAlignment.Center,
             Parent = TabButton,
         })
+
+        --// Accent bar on the left of the active tab (side layout only)
+        local TabBar = if Parent then nil else New("Frame", {
+            BackgroundColor3 = "AccentColor",
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            LayoutOrder = -1,
+            Size = UDim2.fromOffset(3, 18),
+            Visible = false,
+            Parent = TabButton,
+        })
+        if TabBar then
+            New("UICorner", {
+                CornerRadius = UDim.new(1, 0),
+                Parent = TabBar,
+            })
+        end
 
         local TabIcon
         if Icon then
@@ -13204,12 +14117,136 @@ function Library:CreateWindow(WindowInfo)
             Label = TabLabel,
             Padding = ButtonPadding,
             Icon = TabIcon,
+            Bar = TabBar,
             Sub = Parent ~= nil,
         }
         table.insert(Library.TabButtons, Entry)
         ApplyTabButtonLayout(Entry)
 
-        return TabButton, TabLabel, TabIcon, TabStroke
+        return TabButton, TabLabel, TabIcon, TabStroke, TabBar, Entry
+    end
+
+    function Window:AddCategory(Info)
+        if typeof(Info) == "string" then
+            Info = { Name = Info }
+        end
+        Info = Info or {}
+
+        local Category = {
+            Name = Info.Name or "Category",
+            Collapsed = Info.Collapsed == true,
+        }
+
+        local Holder = New("Frame", {
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            LayoutOrder = tonumber(Info.Order) or #Tabs:GetChildren(),
+            Size = UDim2.new(1, 0, 0, 0),
+            Parent = Tabs,
+        })
+        New("UIListLayout", {
+            Padding = UDim.new(0, 2),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = Holder,
+        })
+
+        local Header = New("TextButton", {
+            AutoButtonColor = false,
+            BackgroundTransparency = 1,
+            LayoutOrder = 0,
+            Size = UDim2.new(1, 0, 0, 30),
+            Text = "",
+            Parent = Holder,
+        })
+        local HeaderLabel = New("TextLabel", {
+            BackgroundTransparency = 1,
+            FontFace = "FontMedium",
+            Position = UDim2.fromOffset(4, 0),
+            Size = UDim2.new(1, -30, 1, 0),
+            Text = Category.Name,
+            TextColor3 = "MutedFontColor",
+            TextSize = 12,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = Header,
+        })
+        local Chevron = New("ImageLabel", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundTransparency = 1,
+            ImageColor3 = "MutedFontColor",
+            Position = UDim2.new(1, -6, 0.5, 0),
+            Rotation = Category.Collapsed and -90 or 0,
+            Size = UDim2.fromOffset(14, 14),
+            Parent = Header,
+        })
+        local ChevronIcon = Library:GetIcon("chevron-down")
+        if ChevronIcon then
+            Library:ApplyLucideIcon(Chevron, ChevronIcon)
+        end
+
+        local Items = New("Frame", {
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            LayoutOrder = 1,
+            Size = UDim2.new(1, 0, 0, 0),
+            Parent = Holder,
+        })
+        local ItemsLayout = New("UIListLayout", {
+            Padding = UDim.new(0, math.max(TabButtonsStyle.Gap, 2)),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Parent = Items,
+        })
+
+        Category.Holder = Holder
+        Category.Header = Header
+        Category.Label = HeaderLabel
+        Category.Items = Items
+        Category.ItemsLayout = ItemsLayout
+
+        function Category:SetCollapsed(Collapsed: boolean)
+            Category.Collapsed = Collapsed == true
+            TweenService:Create(Chevron, Library.HoverTweenInfo, {
+                Rotation = Category.Collapsed and -90 or 0,
+            }):Play()
+            ApplyCategoryLayout(Category)
+        end
+
+        function Category:Toggle()
+            Category:SetCollapsed(not Category.Collapsed)
+        end
+
+        function Category:SetName(Name: string)
+            Category.Name = Name
+            HeaderLabel.Text = Name
+        end
+
+        --// Same arguments as Window:AddTab; the tab's button lives under this heading
+        function Category:AddTab(...)
+            local TabInfo
+            if select("#", ...) == 1 and typeof(...) == "table" then
+                TabInfo = table.clone((...))
+            else
+                local Name, Icon, Description, Order = ...
+                TabInfo = { Name = Name, Icon = Icon, Description = Description, Order = Order }
+            end
+            TabInfo.Category = Category
+            return Window:AddTab(TabInfo)
+        end
+
+        Library:GiveSignal(Header.MouseEnter:Connect(function()
+            TweenService:Create(HeaderLabel, Library.HoverTweenInfo, { TextColor3 = Library.Scheme.FontColor }):Play()
+        end))
+        Library:GiveSignal(Header.MouseLeave:Connect(function()
+            TweenService:Create(HeaderLabel, Library.HoverTweenInfo, { TextColor3 = Library.Scheme.MutedFontColor }):Play()
+        end))
+        Library:GiveSignal(Header.MouseButton1Click:Connect(function()
+            Category:Toggle()
+        end))
+
+        table.insert(Categories, Category)
+        ApplyCategoryLayout(Category)
+        return Category
     end
 
     --// Parents with sub-tabs show their strip and stay lit while one of their sub-tabs is active
@@ -13232,6 +14269,7 @@ function Library:CreateWindow(WindowInfo)
         local Description = nil
         local Tooltip = nil
         local Order = nil
+        local Category = nil
 
         if select("#", ...) == 1 and typeof(...) == "table" then
             local Info = select(1, ...)
@@ -13241,6 +14279,7 @@ function Library:CreateWindow(WindowInfo)
             Tooltip = Info.Tooltip
             Order = Info.Order
             ParentTab = Info.ParentTab
+            Category = if Info.ParentTab then nil else Info.Category
         else
             Name = select(1, ...)
             Icon = select(2, ...)
@@ -13249,7 +14288,7 @@ function Library:CreateWindow(WindowInfo)
         end
 
         if not tonumber(Order) then
-            Order = #(if ParentTab then ParentTab.SubTabStrip else Tabs):GetChildren()
+            Order = #(if ParentTab then ParentTab.SubTabStrip elseif Category then Category.Items else Tabs):GetChildren()
         end
 
         --// Sub-tabs are keyed under their parent so names can repeat across parents
@@ -13259,6 +14298,8 @@ function Library:CreateWindow(WindowInfo)
         local TabLabel
         local TabIcon
         local TabStroke
+        local TabBar
+        local _TabEntry
 
         local TabContainer
         local TabLeft
@@ -13266,7 +14307,8 @@ function Library:CreateWindow(WindowInfo)
 
         Icon = Library:GetCustomIcon(Icon)
         do
-            TabButton, TabLabel, TabIcon, TabStroke = CreateTabButton(Name, Icon, Order, ParentTab and ParentTab.SubTabStrip)
+            TabButton, TabLabel, TabIcon, TabStroke, TabBar, _TabEntry =
+                CreateTabButton(Name, Icon, Order, ParentTab and ParentTab.SubTabStrip, Category and Category.Items)
 
             --// Tab Container \\--
             TabContainer = New("Frame", {
@@ -13377,6 +14419,7 @@ function Library:CreateWindow(WindowInfo)
             DependencyGroupboxes = {},
 
             ParentTab = ParentTab,
+            Category = Category,
             SubTabs = {},
             ActiveSubTab = nil,
             SubTabStrip = nil :: ScrollingFrame?,
@@ -14432,12 +15475,20 @@ function Library:CreateWindow(WindowInfo)
         end
 
         function Tab:SetSelected(Selected: boolean)
+            Tab.Selected = Selected == true
+            --// The side column marks the active tab with an accent bar instead of a filled pill
+            local Pill = Selected and not (TabBar and WindowInfo.TabLayout == "Side")
             TweenService:Create(TabButton, Library.TweenInfo, {
-                BackgroundTransparency = Selected and 0 or 1,
+                BackgroundTransparency = Pill and 0 or 1,
             }):Play()
             TweenService:Create(TabStroke, Library.TweenInfo, {
-                Transparency = Selected and 0 or 1,
+                Transparency = Pill and 0 or 1,
             }):Play()
+            if TabBar then
+                TweenService:Create(TabBar, Library.TweenInfo, {
+                    BackgroundTransparency = Selected and 0 or 1,
+                }):Play()
+            end
             TweenService:Create(TabLabel, Library.TweenInfo, {
                 TextTransparency = Selected and 0 or 0.5,
             }):Play()
@@ -14475,7 +15526,7 @@ function Library:CreateWindow(WindowInfo)
 
             Tab:SetSelected(true)
 
-            Window:ShowTabInfo(Name, Description)
+            Window:ShowTabInfo(Name, Description, if ParentTab then ParentTab.Name elseif Category then Category.Name else nil)
 
             Library:PlayTabAnimation(Tab, true)
             Tab:RefreshSides()
