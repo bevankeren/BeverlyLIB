@@ -13905,6 +13905,8 @@ function Library:CreateWindow(WindowInfo)
         Category.Items.AutomaticSize = if Side then Enum.AutomaticSize.Y else Enum.AutomaticSize.XY
         Category.Items.Size = if Side then UDim2.new(1, 0, 0, 0) else UDim2.fromOffset(0, TabBarHeight)
         Category.Items.Visible = not (Side and Category.Collapsed)
+        Category.Items.ClipsDescendants = false
+        Category.AnimToken = (Category.AnimToken or 0) + 1 --// cancels any running collapse animation
     end
 
     --// Swaps the tab buttons between the top strip and a column left of the content
@@ -14132,6 +14134,7 @@ function Library:CreateWindow(WindowInfo)
         Info = Info or {}
 
         local Category = {
+            AnimToken = 0,
             Name = Info.Name or "Category",
             Collapsed = Info.Collapsed == true,
         }
@@ -14151,17 +14154,25 @@ function Library:CreateWindow(WindowInfo)
 
         local Header = New("TextButton", {
             AutoButtonColor = false,
+            BackgroundColor3 = "MainColor",
             BackgroundTransparency = 1,
             LayoutOrder = 0,
             Size = UDim2.new(1, 0, 0, 30),
             Text = "",
             Parent = Holder,
         })
+        table.insert(
+            Library.Corners,
+            New("UICorner", {
+                CornerRadius = UDim.new(0, WindowInfo.CornerRadius),
+                Parent = Header,
+            })
+        )
         local HeaderLabel = New("TextLabel", {
             BackgroundTransparency = 1,
             FontFace = "FontMedium",
-            Position = UDim2.fromOffset(4, 0),
-            Size = UDim2.new(1, -30, 1, 0),
+            Position = UDim2.fromOffset(8, 0),
+            Size = UDim2.new(1, -34, 1, 0),
             Text = Category.Name,
             TextColor3 = "MutedFontColor",
             TextSize = 12,
@@ -14173,7 +14184,7 @@ function Library:CreateWindow(WindowInfo)
             AnchorPoint = Vector2.new(1, 0.5),
             BackgroundTransparency = 1,
             ImageColor3 = "MutedFontColor",
-            Position = UDim2.new(1, -6, 0.5, 0),
+            Position = UDim2.new(1, -8, 0.5, 0),
             Rotation = Category.Collapsed and -90 or 0,
             Size = UDim2.fromOffset(14, 14),
             Parent = Header,
@@ -14203,12 +14214,46 @@ function Library:CreateWindow(WindowInfo)
         Category.Items = Items
         Category.ItemsLayout = ItemsLayout
 
-        function Category:SetCollapsed(Collapsed: boolean)
-            Category.Collapsed = Collapsed == true
-            TweenService:Create(Chevron, Library.HoverTweenInfo, {
-                Rotation = Category.Collapsed and -90 or 0,
+        local CollapseTweenInfo = TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+
+        function Category:SetCollapsed(Collapsed: boolean, Instant: boolean?)
+            Collapsed = Collapsed == true
+            if Collapsed == Category.Collapsed and not Instant then
+                return
+            end
+            Category.Collapsed = Collapsed
+            TweenService:Create(Chevron, CollapseTweenInfo, {
+                Rotation = Collapsed and -90 or 0,
             }):Play()
-            ApplyCategoryLayout(Category)
+
+            if Instant or WindowInfo.TabLayout ~= "Side" or not (Library.Animations and Library.Animations.Groupbox) then
+                ApplyCategoryLayout(Category)
+                return
+            end
+
+            --// Slide the tab list open/closed: pin its height, tween it, then hand back to AutomaticSize
+            local Token = (Category.AnimToken or 0) + 1
+            Category.AnimToken = Token
+
+            local Scale = math.max(Library.DPIScale, 0.01)
+            local FullHeight = ItemsLayout.AbsoluteContentSize.Y / Scale
+            local StartHeight = if Items.Visible then Items.AbsoluteSize.Y / Scale else 0
+
+            Items.AutomaticSize = Enum.AutomaticSize.None
+            Items.ClipsDescendants = true
+            Items.Size = UDim2.new(1, 0, 0, StartHeight)
+            Items.Visible = true
+
+            local Tween = TweenService:Create(Items, CollapseTweenInfo, {
+                Size = UDim2.new(1, 0, 0, if Collapsed then 0 else FullHeight),
+            })
+            Tween.Completed:Connect(function()
+                if Category.AnimToken ~= Token then
+                    return
+                end
+                ApplyCategoryLayout(Category)
+            end)
+            Tween:Play()
         end
 
         function Category:Toggle()
@@ -14233,11 +14278,16 @@ function Library:CreateWindow(WindowInfo)
             return Window:AddTab(TabInfo)
         end
 
+        --// Hover: soft fill behind the heading, label and chevron brighten
         Library:GiveSignal(Header.MouseEnter:Connect(function()
+            TweenService:Create(Header, Library.HoverTweenInfo, { BackgroundTransparency = 0.5 }):Play()
             TweenService:Create(HeaderLabel, Library.HoverTweenInfo, { TextColor3 = Library.Scheme.FontColor }):Play()
+            TweenService:Create(Chevron, Library.HoverTweenInfo, { ImageColor3 = Library.Scheme.FontColor }):Play()
         end))
         Library:GiveSignal(Header.MouseLeave:Connect(function()
+            TweenService:Create(Header, Library.HoverTweenInfo, { BackgroundTransparency = 1 }):Play()
             TweenService:Create(HeaderLabel, Library.HoverTweenInfo, { TextColor3 = Library.Scheme.MutedFontColor }):Play()
+            TweenService:Create(Chevron, Library.HoverTweenInfo, { ImageColor3 = Library.Scheme.MutedFontColor }):Play()
         end))
         Library:GiveSignal(Header.MouseButton1Click:Connect(function()
             Category:Toggle()
