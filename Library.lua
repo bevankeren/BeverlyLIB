@@ -12057,7 +12057,7 @@ function Library:CreateWindow(WindowInfo)
     local SearchWidth = math.max(120, tonumber(WindowInfo.SideTabsWidth) or 180) --// sidebar column width
     local SidebarWidth = WindowPadding * 2 + SearchWidth
     local HeaderRightX = SidebarWidth + 12
-    local ContentTop = HeaderHeight + 6
+    local ContentTop = HeaderRowHeight + 24 --// content starts right under the breadcrumb
 
     --// Grip sits in the footer's corner, inset further as the window corner rounds
     local function GetResizeGripPosition(Radius: number): UDim2
@@ -12562,7 +12562,7 @@ function Library:CreateWindow(WindowInfo)
         --// Top Bar \\-
         TopBar = New("Frame", {
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, HeaderHeight),
+            Size = UDim2.new(1, 0, 0, HeaderRowHeight),
             Parent = MainFrame,
         })
         Library:MakeDraggable(MainFrame, TopBar, false, true, WindowSnapConfig)
@@ -12655,9 +12655,9 @@ function Library:CreateWindow(WindowInfo)
         CurrentTabLabel = New("TextLabel", {
             BackgroundTransparency = 1,
             FontFace = "FontMedium",
-            Position = UDim2.fromOffset(HeaderRightX + 2, HeaderRowHeight),
+            Position = UDim2.fromOffset(HeaderRightX + 2, HeaderRowHeight - 6),
             RichText = true,
-            Size = UDim2.new(1, -HeaderRightX - WindowPadding - 2, 0, 34),
+            Size = UDim2.new(1, -HeaderRightX - WindowPadding - 2, 0, 24),
             Text = "",
             TextColor3 = "MutedFontColor",
             TextSize = 13,
@@ -13914,7 +13914,6 @@ function Library:CreateWindow(WindowInfo)
 
         --// Side column starts a gap below the header so the first button's outline isn't clipped
         local SideTop = HeaderHeight + 8
-        local BodyHeight = SideTop + FooterHeight
         local Side = Layout == "Side"
         local SidebarShown = Side and not Window.SidebarHidden
         SidebarPanel.Visible = SidebarShown
@@ -13938,8 +13937,8 @@ function Library:CreateWindow(WindowInfo)
             TabsPadding.PaddingTop = UDim.new(0, 1)
             TabsPadding.PaddingBottom = UDim.new(0, 1)
             local Left = if SidebarShown then HeaderRightX else WindowPadding
-            Container.Position = UDim2.fromOffset(Left, SideTop)
-            Container.Size = UDim2.new(1, -Left - WindowPadding, 1, -BodyHeight)
+            Container.Position = UDim2.fromOffset(Left, ContentTop)
+            Container.Size = UDim2.new(1, -Left - WindowPadding, 1, -ContentTop - FooterHeight)
         else
             Tabs.AutomaticCanvasSize = Enum.AutomaticSize.X
             Tabs.ScrollingDirection = Enum.ScrollingDirection.X
