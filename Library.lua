@@ -12763,7 +12763,11 @@ function Library:CreateWindow(WindowInfo)
         Library:GiveSignal(MinimizeButton.MouseButton1Click:Connect(function()
             --// MouseLeave never fires once the window hides, so reset the hover state ourselves
             SetMinimizeHover(false, true)
-            Library:Toggle(false)
+            if (Library :: any).Minimize then
+                (Library :: any):Minimize()
+            else
+                Library:Toggle(false)
+            end
         end))
 
 
@@ -17508,6 +17512,249 @@ function Library:CreateWindow(WindowInfo)
 
     function Library:SetToggleButtonVisible(Visible: boolean)
         Window:SetToggleButtonVisible(Visible)
+    end
+
+    --// Minimize: the window folds into a black "island" pill at the top of the screen.
+    --// The island always stays on screen while minimized, so there's always something to click to bring the UI back
+    --// (on PC the floating toggle button is hidden by default, which used to leave nothing to reopen with).
+    do
+        local IslandBlack = Color3.fromRGB(0, 0, 0)
+        local IslandWhite = Color3.fromRGB(255, 255, 255)
+        local IslandSpring = TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        local IslandSoft = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        local IslandShrink = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+
+        local RestSize = UDim2.fromOffset(170, 36)
+        local HoverSize = UDim2.fromOffset(236, 44)
+        local SeedSize = UDim2.fromOffset(96, 28)
+
+        local Island = New("TextButton", {
+            AnchorPoint = Vector2.new(0.5, 0),
+            AutoButtonColor = false,
+            BackgroundColor3 = IslandBlack,
+            BackgroundTransparency = 1,
+            ClipsDescendants = true,
+            Position = UDim2.new(0.5, 0, 0, 10),
+            Size = SeedSize,
+            Text = "",
+            Visible = false,
+            ZIndex = 50,
+            Parent = ScreenGui,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(1, 0),
+            Parent = Island,
+        })
+        table.insert(Library.Scales, New("UIScale", { Parent = Island }))
+
+        local IslandContent = New("CanvasGroup", {
+            BackgroundTransparency = 1,
+            GroupTransparency = 1,
+            Size = UDim2.fromScale(1, 1),
+            ZIndex = 51,
+            Parent = Island,
+        })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 8),
+            PaddingRight = UDim.new(0, 14),
+            Parent = IslandContent,
+        })
+
+        --// Left: window icon (or the title's first letter) in a small circle
+        local Badge = New("Frame", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundColor3 = Color3.fromRGB(38, 38, 40),
+            Position = UDim2.fromScale(0, 0.5),
+            Size = UDim2.fromOffset(22, 22),
+            ZIndex = 52,
+            Parent = IslandContent,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Badge })
+        local IslandIcon = WindowInfo.Icon and Library:GetCustomIcon(WindowInfo.Icon)
+        if IslandIcon then
+            Library:CreateIcon(IslandIcon, {
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                ImageColor3 = IslandWhite,
+                Position = UDim2.fromScale(0.5, 0.5),
+                Size = UDim2.fromOffset(13, 13),
+                ZIndex = 53,
+                Parent = Badge,
+            })
+        else
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                FontFace = "FontBold",
+                Size = UDim2.fromScale(1, 1),
+                Text = (WindowInfo.Title or "?"):sub(1, 1),
+                TextColor3 = IslandWhite,
+                TextSize = 12,
+                ZIndex = 53,
+                Parent = Badge,
+            })
+        end
+
+        local Texts = New("Frame", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0, 30, 0.5, 0),
+            Size = UDim2.new(1, -46, 1, 0),
+            ZIndex = 52,
+            Parent = IslandContent,
+        })
+        local IslandTitle = New("TextLabel", {
+            BackgroundTransparency = 1,
+            FontFace = "FontBold",
+            Size = UDim2.fromScale(1, 1),
+            Text = WindowInfo.Title or "",
+            TextColor3 = IslandWhite,
+            TextSize = 13,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 53,
+            Parent = Texts,
+        })
+        local IslandHint = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromScale(0, 0.5),
+            Size = UDim2.fromScale(1, 0.5),
+            Text = if Library.IsMobile then "Tap to open" else "Click to open",
+            TextColor3 = Color3.fromRGB(150, 150, 155),
+            TextSize = 11,
+            TextTransparency = 1,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 53,
+            Parent = Texts,
+        })
+
+        --// Right: a pulsing accent dot, like the island's live activity indicator
+        local Dot = New("Frame", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundColor3 = "AccentColor",
+            Position = UDim2.fromScale(1, 0.5),
+            Size = UDim2.fromOffset(8, 8),
+            ZIndex = 52,
+            Parent = IslandContent,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Dot })
+
+        local Minimized = false
+        local Hovering = false
+        local PulseThread: thread? = nil
+
+        local function SetIslandHover(Hover: boolean)
+            Hovering = Hover
+            if not Minimized then
+                return
+            end
+            TweenService:Create(Island, IslandSpring, { Size = if Hover then HoverSize else RestSize }):Play()
+            TweenService:Create(IslandTitle, IslandSoft, {
+                Size = if Hover then UDim2.fromScale(1, 0.5) else UDim2.fromScale(1, 1),
+            }):Play()
+            TweenService:Create(IslandHint, IslandSoft, { TextTransparency = if Hover then 0 else 1 }):Play()
+        end
+
+        local function StartPulse()
+            if PulseThread then
+                return
+            end
+            PulseThread = task.spawn(function()
+                local PulseInfo = TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+                while Minimized and not Library.Unloaded do
+                    TweenService:Create(Dot, PulseInfo, { BackgroundTransparency = 0.65 }):Play()
+                    task.wait(0.9)
+                    TweenService:Create(Dot, PulseInfo, { BackgroundTransparency = 0 }):Play()
+                    task.wait(0.9)
+                end
+                PulseThread = nil
+            end)
+        end
+
+        local function ShowIsland()
+            IslandTitle.Text = WindowInfo.Title or ""
+            Island.Size = SeedSize
+            Island.BackgroundTransparency = 1
+            IslandContent.GroupTransparency = 1
+            Island.Visible = true
+
+            TweenService:Create(Island, IslandSpring, {
+                BackgroundTransparency = 0,
+                Size = if Hovering then HoverSize else RestSize,
+            }):Play()
+            TweenService:Create(IslandContent, IslandSoft, { GroupTransparency = 0 }):Play()
+            StartPulse()
+        end
+
+        local function HideIsland()
+            if not Island.Visible then
+                return
+            end
+            TweenService:Create(IslandContent, IslandShrink, { GroupTransparency = 1 }):Play()
+            local Tween = TweenService:Create(Island, IslandShrink, {
+                BackgroundTransparency = 1,
+                Size = SeedSize,
+            })
+            Tween.Completed:Once(function()
+                if not Minimized then
+                    Island.Visible = false
+                end
+            end)
+            Tween:Play()
+        end
+
+        function Window:Minimize()
+            if Minimized then
+                return
+            end
+            Minimized = true
+            Library.Minimized = true
+            Window:Toggle(false)
+            ShowIsland()
+        end
+
+        function Window:Restore()
+            if not Minimized then
+                return
+            end
+            Minimized = false
+            Library.Minimized = false
+            HideIsland()
+            if not Library.Toggled then
+                Window:Toggle(true)
+            end
+        end
+
+        function Library:Minimize()
+            Window:Minimize()
+        end
+
+        function Library:Restore()
+            Window:Restore()
+        end
+
+        --// Opening the UI any other way (keybind, toggle button) also dismisses the island
+        local BaseToggle = Window.Toggle
+        function Window:Toggle(Value: boolean?)
+            local Result = BaseToggle(Window, Value)
+            if Minimized and Library.Toggled then
+                Minimized = false
+                Library.Minimized = false
+                HideIsland()
+            end
+            return Result
+        end
+
+        Island.MouseEnter:Connect(function()
+            SetIslandHover(true)
+        end)
+        Island.MouseLeave:Connect(function()
+            SetIslandHover(false)
+        end)
+        Island.Activated:Connect(function()
+            Hovering = false
+            Window:Restore()
+        end)
+
+        Library.Island = Island
     end
 
     --// Execution \\--

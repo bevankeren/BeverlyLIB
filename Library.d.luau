@@ -1428,6 +1428,8 @@ export type Window = {
     SetBackgroundImage: (self: Window, Image: string | number) -> (),
     SetUsername: (self: Window, Username: string?) -> (),
     SetToggleButtonVisible: (self: Window, Visible: boolean) -> (),
+    Minimize: (self: Window) -> (),
+    Restore: (self: Window) -> (),
     SetBadge: (self: Window, Badge: string?) -> (),
     SetFooter: (self: Window, Footer: string) -> (),
     SetFooterLeft: (self: Window, Text: string?) -> (),
