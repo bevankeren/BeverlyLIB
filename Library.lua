@@ -15481,6 +15481,39 @@ function Library:CreateWindow(WindowInfo)
                 GroupboxCollapseArrow.MouseButton1Click:Connect(function()
                     Groupbox:ToggleCollapsed()
                 end)
+
+                --// Clicking anywhere on a collapsed groupbox expands it (ignores drags and the arrow itself)
+                local PressPosition: Vector3? = nil
+                local function IsClickInput(Input: InputObject)
+                    return Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch
+                end
+                local function IsOverArrow(Position: Vector3)
+                    local ArrowPos, ArrowSize = GroupboxCollapseArrow.AbsolutePosition, GroupboxCollapseArrow.AbsoluteSize
+                    return Position.X >= ArrowPos.X and Position.X <= ArrowPos.X + ArrowSize.X
+                        and Position.Y >= ArrowPos.Y and Position.Y <= ArrowPos.Y + ArrowSize.Y
+                end
+
+                table.insert(Groupbox.Connections, GroupboxHolder.InputBegan:Connect(function(Input: InputObject)
+                    if IsClickInput(Input) and Groupbox.Collapsed and not Groupbox.PoppedOut then
+                        PressPosition = Input.Position
+                    end
+                end))
+                table.insert(Groupbox.Connections, GroupboxHolder.InputEnded:Connect(function(Input: InputObject)
+                    if not IsClickInput(Input) or not PressPosition then
+                        return
+                    end
+
+                    local Start = PressPosition
+                    PressPosition = nil
+                    if not Groupbox.Collapsed or Groupbox.PoppedOut or IsOverArrow(Input.Position) then
+                        return
+                    end
+                    if (Input.Position - Start).Magnitude > 5 then
+                        return
+                    end
+
+                    Groupbox:SetCollapsed(false)
+                end))
             end
 
             Groupbox.AddTabbox = AddTabbox
