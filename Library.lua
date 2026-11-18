@@ -4712,7 +4712,7 @@ do
                 Size = UDim2.new(1, 0, 1, 0),
                 Position = UDim2.new(0, 0, 0, 0),
                 Text = KeyPicker.Value,
-                TextSize = 12,
+                TextSize = 15,
                 TextXAlignment = Enum.TextXAlignment.Center,
                 Parent = Picker,
             })
@@ -5005,7 +5005,7 @@ do
                 FontFace = "FontMedium",
                 Size = UDim2.new(1, 0, 0, IsForButton and 22 or 20),
                 Text = Mode,
-                TextSize = 12,
+                TextSize = 15,
                 TextTransparency = 0.5,
                 Parent = MenuTable.Menu,
             })
@@ -9096,7 +9096,7 @@ do
                 PlaceholderText = "Search...",
                 Position = UDim2.fromOffset(-8, 0),
                 Size = UDim2.new(1, 6, 1, 0),
-                TextSize = 12,
+                TextSize = 15,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Visible = false,
                 Parent = DisplayButton,
@@ -9587,7 +9587,7 @@ do
                 BackgroundTransparency = 1,
                 Size = UDim2.new(1, 0, 0, ItemHeight),
                 Text = "",
-                TextSize = 12,
+                TextSize = 15,
                 TextTransparency = 0.5,
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 TextXAlignment = Enum.TextXAlignment.Left,
@@ -17525,9 +17525,9 @@ function Library:CreateWindow(WindowInfo)
         local IslandFade = TweenInfo.new(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
         local IslandOut = TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 
-        local RestHeight, HoverHeight = 28, 30
-        local HoverPad = 16
-        local SeedSize = UDim2.fromOffset(60, 22)
+        local RestHeight, HoverHeight = 40, 44
+        local HoverPad = 20
+        local SeedSize = UDim2.fromOffset(90, 30)
 
         local Island = New("TextButton", {
             AnchorPoint = Vector2.new(0.5, 0),
@@ -17535,7 +17535,7 @@ function Library:CreateWindow(WindowInfo)
             BackgroundColor3 = IslandColor,
             BackgroundTransparency = 1,
             ClipsDescendants = true,
-            Position = UDim2.new(0.5, 0, 0, 8),
+            Position = UDim2.new(0.5, 0, 0, 12),
             Size = SeedSize,
             Text = "",
             Visible = false,
@@ -17563,7 +17563,7 @@ function Library:CreateWindow(WindowInfo)
                 Size = UDim2.fromScale(1, 1),
                 Text = Text,
                 TextColor3 = Color,
-                TextSize = 12,
+                TextSize = 15,
                 TextTransparency = 1,
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 ZIndex = 51,
@@ -17572,14 +17572,14 @@ function Library:CreateWindow(WindowInfo)
         end
         local IslandTitle = MakeIslandLabel(WindowInfo.Title or "", IslandText)
         local IslandHint = MakeIslandLabel(if Library.IsMobile then "Tap to open" else "Click to open", IslandMuted)
-        IslandHint.Position = UDim2.new(0.5, 0, 0.5, 8)
+        IslandHint.Position = UDim2.new(0.5, 0, 0.5, 10)
 
         local Minimized = false
         local Hovering = false
 
         local function TargetSize()
-            local TitleWidth = TextService:GetTextSize(IslandTitle.Text, 12, Enum.Font.GothamBold, Vector2.new(1000, 100)).X
-            local Width = math.clamp(TitleWidth + 36, 96, 260)
+            local TitleWidth = TextService:GetTextSize(IslandTitle.Text, 15, Enum.Font.GothamBold, Vector2.new(1000, 100)).X
+            local Width = math.clamp(TitleWidth + 56, 150, 320)
             if Hovering then
                 return UDim2.fromOffset(Width + HoverPad, HoverHeight)
             end
@@ -17588,13 +17588,13 @@ function Library:CreateWindow(WindowInfo)
 
         local function RefreshIsland()
             TweenService:Create(Island, IslandGlide, { Size = TargetSize() }):Play()
-            TweenService:Create(IslandStroke, IslandFade, { Transparency = if Hovering then 0.85 else 0.93 }):Play()
+            TweenService:Create(IslandStroke, IslandFade, { Transparency = if Hovering then 0.7 else 0.82 }):Play()
             TweenService:Create(IslandTitle, IslandFade, {
-                Position = UDim2.new(0.5, 0, 0.5, if Hovering then -8 else 0),
+                Position = UDim2.new(0.5, 0, 0.5, if Hovering then -10 else 0),
                 TextTransparency = if Hovering then 1 else 0,
             }):Play()
             TweenService:Create(IslandHint, IslandFade, {
-                Position = UDim2.new(0.5, 0, 0.5, if Hovering then 0 else 8),
+                Position = UDim2.new(0.5, 0, 0.5, if Hovering then 0 else 10),
                 TextTransparency = if Hovering then 0 else 1,
             }):Play()
         end
@@ -17608,7 +17608,7 @@ function Library:CreateWindow(WindowInfo)
             IslandHint.TextTransparency = 1
             Island.Visible = true
 
-            TweenService:Create(Island, IslandGlide, { BackgroundTransparency = 0.08 }):Play()
+            TweenService:Create(Island, IslandGlide, { BackgroundTransparency = 0 }):Play()
             RefreshIsland()
         end
 
@@ -17680,7 +17680,18 @@ function Library:CreateWindow(WindowInfo)
                 RefreshIsland()
             end
         end)
+        --// Draggable like the toggle button; a press that turned into a drag doesn't reopen the UI
+        Library:MakeDraggable(Island, Island, true)
+        local IslandPressPosition
+        Island.InputBegan:Connect(function(Input: InputObject)
+            if IsClickInput(Input) then
+                IslandPressPosition = Island.AbsolutePosition
+            end
+        end)
         Island.Activated:Connect(function()
+            if IslandPressPosition and (Island.AbsolutePosition - IslandPressPosition).Magnitude > 6 then
+                return
+            end
             Window:Restore()
         end)
 
