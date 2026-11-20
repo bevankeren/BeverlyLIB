@@ -1,3 +1,9 @@
+## 20.11.2026
+
+- Restyled the default window and minimized pill for Fluffy Hub: Moss + Lime, top tabs with an active underline, and matte surfaces. Side layout and existing custom themes remain available.
+- Added the Fluffy Pulse status strip, heartbeat timeout and recovery, custom status detail, and a read-only snapshot of heartbeat count and age.
+- Added **Legacy Mono** to ThemeManager for the previous default palette.
+
 ## 06.11.2026
 
 ```diff

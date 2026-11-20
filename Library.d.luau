@@ -1318,6 +1318,15 @@ export type WindowAnimations = {
     Groupbox: boolean?,
     Dropdown: boolean?,
     KeyPicker: boolean?,
+    ScriptPulse: boolean?,
+}
+
+export type ScriptStatus = "Idle" | "Running" | "Paused" | "Stopped" | "Error"
+export type ScriptStatusSnapshot = {
+    State: ScriptStatus | "Stale",
+    Detail: string?,
+    Heartbeats: number,
+    LastHeartbeatAge: number?,
 }
 
 export type WindowInfo = {
@@ -1325,6 +1334,8 @@ export type WindowInfo = {
     Footer: string?,
     Version: string? | number?,
     ShowProfile: boolean?,
+    ScriptStatus: boolean?,
+    ScriptHeartbeatTimeout: number?,
     Position: UDim2?,
     Size: UDim2?,
     Icon: string?,
@@ -1423,6 +1434,9 @@ export type Window = {
         Info: DialogInfo
     ) -> Dialog,
     ChangeTitle: (self: Window, Title: string) -> (),
+    SetScriptStatus: (self: Window, State: ScriptStatus, Detail: string?) -> boolean,
+    ReportScriptHeartbeat: (self: Window, Detail: string?) -> boolean,
+    GetScriptStatus: (self: Window) -> ScriptStatusSnapshot,
     SetVersion: (self: Window, Version: string? | number?) -> (),
     RefreshTitleSize: (self: Window) -> (),
     SetBackgroundImage: (self: Window, Image: string | number) -> (),
@@ -1637,6 +1651,8 @@ export type Library = {
         WindowInfo: {
             Title: string?,
             Footer: string?,
+            ScriptStatus: boolean?,
+            ScriptHeartbeatTimeout: number?,
             Position: UDim2?,
             Size: UDim2?,
             Icon: string?,
@@ -1681,6 +1697,7 @@ export type Library = {
                 Groupbox: boolean?,
                 Dropdown: boolean?,
                 KeyPicker: boolean?,
+                ScriptPulse: boolean?,
             }?,
             TabTransitionTime: number?,
             TabSwipeOffset: number?,

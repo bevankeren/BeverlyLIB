@@ -65,7 +65,7 @@ local ThemeManager = {
     BuiltInThemes = {
         ["Default"] = {
             1,
-            { FontColor = "ececf0", MainColor = "141416", AccentColor = "e8e8ec", BackgroundColor = "0e0e0f", OutlineColor = "242427", BackgroundImage = "" },
+            { FontColor = "eef4e9", MainColor = "15221b", AccentColor = "d3f66b", BackgroundColor = "0d1511", OutlineColor = "354a3c", BackgroundImage = "" },
         },
         ["BBot"] = {
             2,
@@ -134,7 +134,11 @@ local ThemeManager = {
         ["Material"] = {
             18,
             { FontColor = "eeffff", MainColor = "212121", AccentColor = "82aaff", BackgroundColor = "151515", OutlineColor = "424242", BackgroundImage = "" },
-        }
+        },
+        ["Legacy Mono"] = {
+            19,
+            { FontColor = "ececf0", MainColor = "141416", AccentColor = "e8e8ec", BackgroundColor = "0e0e0f", OutlineColor = "242427", BackgroundImage = "" },
+        },
     }
 }
 

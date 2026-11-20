@@ -278,18 +278,18 @@ local Library = {
     OriginalMinSize = Vector2.new(480, 360),
     MinSize = Vector2.new(480, 360),
     DPIScale = 1,
-    CornerRadius = 6,
+    CornerRadius = 10,
 
     --// Scheme \\--
     --// SurfaceColor, MutedFontColor, HoverColor, InlineColor, DarkAccentColor, ToggleOffColor,
     --// FontMedium and FontBold are derived from these when a theme omits them
     IsLightTheme = false,
     Scheme = {
-        BackgroundColor = Color3.fromRGB(14, 14, 15),
-        MainColor = Color3.fromRGB(20, 20, 22),
-        AccentColor = Color3.fromRGB(232, 232, 236),
-        OutlineColor = Color3.fromRGB(36, 36, 39),
-        FontColor = Color3.fromRGB(236, 236, 240),
+        BackgroundColor = Color3.fromRGB(13, 21, 17),
+        MainColor = Color3.fromRGB(21, 34, 27),
+        AccentColor = Color3.fromRGB(211, 246, 107),
+        OutlineColor = Color3.fromRGB(53, 74, 60),
+        FontColor = Color3.fromRGB(238, 244, 233),
         Font = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium),
 
         RedColor = Color3.fromRGB(255, 50, 50),
@@ -381,8 +381,10 @@ local Templates = {
 
     --// Library \\--
     Window = {
-        Title = "No Title",
-        Footer = "No Footer",
+        Title = "Fluffy Hub",
+        Footer = "",
+        ScriptStatus = true,
+        ScriptHeartbeatTimeout = 6,
         Version = nil, --// shown under the title, e.g. "0.0.0.2" -> "Version: 0.0.0.2"
 
         Position = UDim2.fromOffset(6, 6),
@@ -404,7 +406,7 @@ local Templates = {
         GlobalSearch = false,
         DisableSearch = false,
 
-        CornerRadius = 6,
+        CornerRadius = 10,
         NotifySide = "Right",
 
         Font = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium),
@@ -441,12 +443,13 @@ local Templates = {
             Groupbox = false,
             Dropdown = false,
             KeyPicker = false,
+            ScriptPulse = true,
         },
 
         TabTransitionTime = 0.22,
         TabSwipeOffset = 26,
         TabSwipeFrom = "bottom",
-        TabLayout = "Side", --// "Side" column left of the content (default), or "Top" strip in the header
+        TabLayout = "Top", --// "Top" strip in the header (default), or "Side" column
         SideTabsWidth = 180, --// matches the header search bar so the column lines up
         TabButtonsStyle = {
             Gap = 0,
@@ -12019,6 +12022,201 @@ function Library:Notify(...)
     return Data
 end
 
+-- Reports come from useful script work, not from the UI render loop.
+local function CreateScriptStatusTracker(Timeout, Clock, Schedule, Cancel, Render)
+    local State, Detail = "Idle", nil
+    local Heartbeats, LastHeartbeat = 0, nil
+    local Deadline, Pending, Closed
+    local ExplicitStates = { Idle = true, Running = true, Paused = true, Stopped = true, Error = true }
+
+    local function ClearCheck()
+        Deadline = nil
+        if Pending then
+            Cancel(Pending)
+            Pending = nil
+        end
+    end
+
+    local function Check()
+        Pending = nil
+        if Closed or State ~= "Running" or not Deadline then
+            return
+        end
+        local Remaining = Deadline - Clock()
+        if Remaining > 0 then
+            Pending = Schedule(Remaining, Check)
+        else
+            Deadline = nil
+            State = "Stale"
+            Render(State, Detail, false)
+        end
+    end
+
+    local function Extend(Now)
+        Deadline = Now + Timeout
+        if not Pending then
+            Pending = Schedule(Timeout, Check)
+        end
+    end
+
+    local function CleanDetail(Value)
+        return if typeof(Value) == "string" then (Value:gsub("[%c]", " ")) else nil
+    end
+
+    return {
+        Set = function(NextState, NextDetail)
+            if Closed or typeof(NextState) ~= "string" or not ExplicitStates[NextState] then
+                return false
+            end
+            if NextState ~= State then
+                ClearCheck()
+                if NextState == "Idle" or NextState == "Running" then
+                    LastHeartbeat = nil
+                    Heartbeats = 0
+                end
+                if NextState == "Running" then
+                    Extend(Clock())
+                end
+            end
+            State, Detail = NextState, CleanDetail(NextDetail)
+            Render(State, Detail, false)
+            return true
+        end,
+        Beat = function(NextDetail)
+            if Closed or (State ~= "Idle" and State ~= "Running" and State ~= "Stale") then
+                return false
+            end
+            State = "Running"
+            if NextDetail ~= nil then
+                Detail = CleanDetail(NextDetail)
+            end
+            LastHeartbeat = Clock()
+            Heartbeats += 1
+            Extend(LastHeartbeat)
+            Render(State, Detail, true)
+            return true
+        end,
+        Get = function()
+            return {
+                State = State,
+                Detail = Detail,
+                Heartbeats = Heartbeats,
+                LastHeartbeatAge = if LastHeartbeat then math.max(0, Clock() - LastHeartbeat) else nil,
+            }
+        end,
+        Destroy = function()
+            Closed = true
+            ClearCheck()
+        end,
+    }
+end
+
+local function CreateScriptPulse(Parent, Animate)
+    local Strip = New("Frame", {
+        Name = "FluffyPulse",
+        AnchorPoint = Vector2.new(0, 1),
+        BackgroundColor3 = "MainColor",
+        Size = UDim2.new(1, 0, 0, 28),
+        ZIndex = 4,
+        Parent = Parent,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Strip })
+    local Trace = New("Frame", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(9, 6),
+        Size = UDim2.fromOffset(46, 16),
+        Parent = Strip,
+    })
+    local State = "Idle"
+    local function TraceColor()
+        if State == "Running" then
+            return Library.Scheme.AccentColor
+        elseif State == "Error" then
+            return Library.Scheme.RedColor
+        end
+        return GetSchemeValue("MutedFontColor")
+    end
+    local Points = {
+        Vector2.new(0, 8), Vector2.new(13, 8), Vector2.new(17, 5), Vector2.new(21, 8),
+        Vector2.new(24, 12), Vector2.new(28, 1), Vector2.new(32, 15), Vector2.new(36, 8),
+        Vector2.new(46, 8),
+    }
+    local Segments = {}
+    for I = 2, #Points do
+        local A, B = Points[I - 1], Points[I]
+        local Delta, Midpoint = B - A, (A + B) / 2
+        Segments[#Segments + 1] = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = TraceColor,
+            BackgroundTransparency = 0.55,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(Midpoint.X, Midpoint.Y),
+            Rotation = math.deg(math.atan2(Delta.Y, Delta.X)),
+            Size = UDim2.fromOffset(Delta.Magnitude + 0.5, 1),
+            Parent = Trace,
+        })
+    end
+    local StatusText = New("TextLabel", {
+        BackgroundTransparency = 1,
+        FontFace = "FontMedium",
+        Position = UDim2.fromOffset(64, 0),
+        Size = UDim2.new(1, -72, 1, 0),
+        Text = "Idle",
+        TextSize = 12,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = Strip,
+    })
+    local Phase = New("NumberValue", { Value = -2, Parent = Strip })
+    local ActiveTween
+    local LastFlash = -math.huge
+    local Sweep = TweenInfo.new(0.62, Enum.EasingStyle.Linear)
+    local function RestTransparency()
+        return if State == "Running" then 0.32 else 0.55
+    end
+    local function ClearFlash()
+        if ActiveTween then
+            ActiveTween:Cancel()
+            ActiveTween:Destroy()
+            ActiveTween = nil
+        end
+    end
+    Library:GiveSignal(Phase.Changed:Connect(function(Value)
+        local Rest = RestTransparency()
+        for Index, Segment in Segments do
+            local Highlight = math.max(0, 1 - math.abs(Index - Value) / 1.6)
+            Segment.BackgroundTransparency = Rest * (1 - Highlight)
+        end
+    end))
+    Library:OnUnload(ClearFlash)
+
+    return Strip, function(NextState, Detail, Heartbeat)
+        local Changed = State ~= NextState
+        State = NextState
+        local Label = if State == "Stale" then "Stale · No heartbeat" else State
+        if State == "Stale" and Detail and Detail ~= "" then
+            Detail = "Last: " .. Detail
+        end
+        StatusText.Text = if Detail and Detail ~= "" then Label .. "  ·  " .. Detail else Label
+        if Changed then
+            LastFlash = -math.huge
+            ClearFlash()
+            for _, Segment in Segments do
+                Segment.BackgroundColor3 = TraceColor()
+                Segment.BackgroundTransparency = RestTransparency()
+            end
+        end
+        local Now = os.clock()
+        if Heartbeat and Parent.Visible and Animate() and Now - LastFlash >= 0.75 then
+            LastFlash = Now
+            ClearFlash()
+            Phase.Value = -2
+            ActiveTween = TweenService:Create(Phase, Sweep, { Value = #Segments + 2 })
+            ActiveTween:Play()
+        end
+    end
+end
+
 function Library:CreateWindow(WindowInfo)
     WindowInfo = Library:Validate(WindowInfo, Templates.Window)
     local ViewportSize: Vector2 = workspace.CurrentCamera.ViewportSize
@@ -12049,15 +12247,17 @@ function Library:CreateWindow(WindowInfo)
 
     --// Shell layout: header, tab strip, content, footer
     local WindowPadding = 10
-    --// Header is two rows: [title / version | folder + tab picker (or tabs) | user] over [search | breadcrumb]
-    local HeaderRowHeight = 56
-    local HeaderHeight = HeaderRowHeight + 42
-    local TabBarHeight = 30
+    --// Top: [title | actions] over [tabs | search]. Side keeps its picker.
+    local HeaderRowHeight = 48
+    local TabBarHeight = if Library.IsMobile then 44 else 34
+    local HeaderHeight = HeaderRowHeight + TabBarHeight
     local FooterHeight = 28
+    local StatusHeight = if WindowInfo.ScriptStatus ~= false then 34 else 0
+    local BottomInset = FooterHeight + StatusHeight
     local SearchWidth = math.max(120, tonumber(WindowInfo.SideTabsWidth) or 180) --// sidebar column width
     local SidebarWidth = WindowPadding * 2 + SearchWidth
     local HeaderRightX = SidebarWidth + 12
-    local ContentTop = HeaderRowHeight + 24 --// content starts right under the breadcrumb
+    local ContentTop = HeaderHeight + 8
 
     --// Grip sits in the footer's corner, inset further as the window corner rounds
     local function GetResizeGripPosition(Radius: number): UDim2
@@ -12137,6 +12337,7 @@ function Library:CreateWindow(WindowInfo)
 
     local RefreshWindowTitleSize
     local FitTopTabsBounds
+    local StatusStrip, RenderStatus, RenderIslandStatus
 
     do
         local KeybindFrame, KeybindContainer, _, KeybindDivider, KeybindLabelPadding = Library:AddDraggableMenu("Keybinds")
@@ -12589,13 +12790,20 @@ function Library:CreateWindow(WindowInfo)
             })
         else
             WindowIcon = New("TextLabel", {
-                BackgroundTransparency = 1,
-                Size = WindowInfo.IconSize,
-                Text = WindowInfo.Title:sub(1, 1),
-                TextScaled = true,
-                Visible = false,
+                BackgroundColor3 = "AccentColor",
+                BorderSizePixel = 0,
+                FontFace = "FontBold",
+                Size = UDim2.fromOffset(26, 26),
+                Text = "F",
+                TextColor3 = function()
+                    local Accent = Library.Scheme.AccentColor
+                    local Luminance = Accent.R * 0.299 + Accent.G * 0.587 + Accent.B * 0.114
+                    return if Luminance > 0.55 then Color3.fromRGB(13, 21, 17) else Color3.new(1, 1, 1)
+                end,
+                TextSize = 16,
                 Parent = TitleHolder,
             })
+            New("UICorner", { CornerRadius = UDim.new(0, 6), Parent = WindowIcon })
         end
 
         --// Title with the version stacked underneath
@@ -12618,7 +12826,7 @@ function Library:CreateWindow(WindowInfo)
             LayoutOrder = 1,
             Size = UDim2.new(1, 0, 0, 16),
             Text = WindowInfo.Title,
-            TextSize = 15,
+            TextSize = 16,
             TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
@@ -12789,7 +12997,7 @@ function Library:CreateWindow(WindowInfo)
             BackgroundTransparency = 0,
             ClearTextOnFocus = false,
             LayoutOrder = 1,
-            PlaceholderText = "Search",
+            PlaceholderText = "Search settings",
             Position = UDim2.fromOffset(WindowPadding, HeaderRowHeight),
             Size = UDim2.fromOffset(SearchWidth, 34),
             TextSize = 13,
@@ -12849,6 +13057,7 @@ function Library:CreateWindow(WindowInfo)
             AnchorPoint = Vector2.new(0, 0.5),
             AutoButtonColor = false,
             BackgroundColor3 = "MainColor",
+            LayoutOrder = 1,
             Position = UDim2.fromOffset(HeaderRightX, PickerY),
             Size = UDim2.fromOffset(36, 36),
             Text = "",
@@ -13443,6 +13652,12 @@ function Library:CreateWindow(WindowInfo)
                 CloseQuickConfig()
                 return
             end
+            local Width = MainFrame.AbsoluteSize.X / Library.DPIScale
+            local Available = math.max(0, Width - WindowPadding * 2)
+            local MenuWidth = math.min(QuickWidth, Available)
+            QuickMenu.Size = UDim2.fromOffset(MenuWidth, 0)
+            local X = if WindowInfo.TabLayout == "Side" then HeaderRightX else Width - WindowPadding - MenuWidth
+            QuickMenu.Position = UDim2.fromOffset(math.clamp(X, WindowPadding, WindowPadding + Available - MenuWidth), HeaderRowHeight)
             CloseTabPicker()
             RefreshQuickList()
             QuickMenu.Visible = true
@@ -13509,15 +13724,23 @@ function Library:CreateWindow(WindowInfo)
         --// Container \\--
         --// The top tab strip gets whatever the right cluster leaves on the first header row
         local function FitTopTabs()
+            local RightWidth = RightWrapper.AbsoluteSize.X / Library.DPIScale
             if WindowInfo.TabLayout == "Side" then
+                TitleHolder.Size = UDim2.fromOffset(SearchWidth - 2, HeaderRowHeight)
                 return
             end
-            local RightWidth = RightWrapper.AbsoluteSize.X / Library.DPIScale
-            Tabs.Position = UDim2.fromOffset(HeaderRightX, (HeaderRowHeight - TabBarHeight) / 2)
-            Tabs.Size = UDim2.new(1, -HeaderRightX - WindowPadding - (if RightWidth > 0 then RightWidth + 10 else 0), 0, TabBarHeight)
+            local Width = MainFrame.AbsoluteSize.X / Library.DPIScale
+            local SearchInset = if SearchBox.Visible then math.clamp(math.floor(Width * 0.33), 92, 164) else 0
+            local SearchHeight = if Library.IsMobile then 44 else 30
+            SearchBox.Position = UDim2.new(1, -WindowPadding - SearchInset, 0, HeaderRowHeight + (TabBarHeight - SearchHeight) / 2)
+            SearchBox.Size = UDim2.fromOffset(SearchInset, SearchHeight)
+            Tabs.Position = UDim2.fromOffset(WindowPadding, HeaderRowHeight)
+            Tabs.Size = UDim2.new(1, -WindowPadding * 2 - SearchInset - (if SearchInset > 0 then 8 else 0), 0, TabBarHeight)
+            TitleHolder.Size = UDim2.new(1, -WindowPadding * 2 - RightWidth - 12, 0, HeaderRowHeight)
         end
         FitTopTabsBounds = FitTopTabs
         Library:GiveSignal(RightWrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(FitTopTabs))
+        Library:GiveSignal(MainFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(FitTopTabs))
         FitTopTabs()
 
         Container = New("Frame", {
@@ -13525,9 +13748,21 @@ function Library:CreateWindow(WindowInfo)
             ClipsDescendants = true,
             Name = "Container",
             Position = UDim2.fromOffset(WindowPadding, ContentTop),
-            Size = UDim2.new(1, -WindowPadding * 2, 1, -ContentTop - FooterHeight),
+            Size = UDim2.new(1, -WindowPadding * 2, 1, -ContentTop - BottomInset),
             Parent = MainFrame,
         })
+        New("Frame", {
+            BackgroundColor3 = "OutlineColor",
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(WindowPadding, HeaderHeight + 2),
+            Size = UDim2.new(1, -WindowPadding * 2, 0, 1),
+            Parent = MainFrame,
+        })
+        if StatusHeight > 0 then
+            StatusStrip, RenderStatus = CreateScriptPulse(MainFrame, function()
+                return Library.Animations.ScriptPulse ~= false
+            end)
+        end
 
         --// Bottom Bar \\--
         local BottomBar = New("Frame", {
@@ -13614,6 +13849,35 @@ function Library:CreateWindow(WindowInfo)
     local Window = {}
     local Fading = false
 
+    local RawTimeout = tonumber(WindowInfo.ScriptHeartbeatTimeout) or 6
+    local ScriptStatus = CreateScriptStatusTracker(
+        if RawTimeout == RawTimeout then math.clamp(RawTimeout, 1, 120) else 6,
+        os.clock,
+        task.delay,
+        task.cancel,
+        function(State, Detail, Heartbeat)
+            if RenderStatus then
+                RenderStatus(State, Detail, Heartbeat)
+            end
+            if RenderIslandStatus then
+                RenderIslandStatus(State)
+            end
+        end
+    )
+    Library:OnUnload(ScriptStatus.Destroy)
+
+    function Window:SetScriptStatus(State, Detail)
+        return ScriptStatus.Set(State, Detail)
+    end
+
+    function Window:ReportScriptHeartbeat(Detail)
+        return ScriptStatus.Beat(Detail)
+    end
+
+    function Window:GetScriptStatus()
+        return ScriptStatus.Get()
+    end
+
     local function SetUICorner(UICorner, Corner, HalfValue)
         local Current = UICorner[Corner]
         if Current.Offset == 0 and Current.Scale == 0 then
@@ -13629,6 +13893,9 @@ function Library:CreateWindow(WindowInfo)
         WindowTitle.Text = title
         WindowInfo.Title = title
         RefreshWindowTitleSize()
+        if RenderIslandStatus then
+            RenderIslandStatus(ScriptStatus.Get().State)
+        end
     end
 
     function Window:RefreshTitleSize()
@@ -13926,8 +14193,20 @@ function Library:CreateWindow(WindowInfo)
         --// The profile card takes the footer's left corner while the sidebar is showing
         ProfileCard.Visible = WindowInfo.ShowProfile ~= false
         FooterLeftLabel.Visible = not (SidebarShown and ProfileCard.Visible)
-        FolderButton.Visible = Side
+        FolderButton.Parent = if Side then TopBar else RightWrapper
+        if Side then
+            FolderButton.Position = UDim2.fromOffset(HeaderRightX, HeaderRowHeight / 2)
+            FolderButton.Size = UDim2.fromOffset(36, 36)
+            local SearchHeight = if Library.IsMobile then 44 else 34
+            SearchBox.Position = UDim2.fromOffset(WindowPadding, HeaderRowHeight)
+            SearchBox.Size = UDim2.fromOffset(SearchWidth, SearchHeight)
+        else
+            local ButtonSize = if Library.IsMobile then 42 else 30
+            FolderButton.Size = UDim2.fromOffset(ButtonSize, ButtonSize)
+        end
+        FolderButton.Visible = Side or Library.QuickConfigProvider ~= nil
         TabPicker.Visible = Side
+        CurrentTabLabel.Visible = Side
         CloseTabPicker()
         CloseQuickConfig()
         Tabs.Visible = not Side or SidebarShown
@@ -13936,15 +14215,12 @@ function Library:CreateWindow(WindowInfo)
             Tabs.ScrollingDirection = Enum.ScrollingDirection.Y
             Tabs.Position = UDim2.fromOffset(WindowPadding, SideTop)
             local ShowProfile = ProfileCard.Visible
-            local ProfileSpace = if ShowProfile then ProfileHeight + WindowPadding + 8 else FooterHeight
+            local ProfileSpace = if ShowProfile then ProfileHeight + WindowPadding + 8 else BottomInset
             Tabs.Size = UDim2.new(0, SearchWidth, 1, -SideTop - ProfileSpace)
             TabsListLayout.FillDirection = Enum.FillDirection.Vertical
             TabsListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
             TabsPadding.PaddingTop = UDim.new(0, 1)
             TabsPadding.PaddingBottom = UDim.new(0, 1)
-            local Left = if SidebarShown then HeaderRightX else WindowPadding
-            Container.Position = UDim2.fromOffset(Left, ContentTop)
-            Container.Size = UDim2.new(1, -Left - WindowPadding, 1, -ContentTop - FooterHeight)
         else
             Tabs.AutomaticCanvasSize = Enum.AutomaticSize.X
             Tabs.ScrollingDirection = Enum.ScrollingDirection.X
@@ -13952,10 +14228,15 @@ function Library:CreateWindow(WindowInfo)
             TabsListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
             TabsPadding.PaddingTop = UDim.new(0, 0)
             TabsPadding.PaddingBottom = UDim.new(0, 0)
-            Container.Position = UDim2.fromOffset(WindowPadding, ContentTop)
-            Container.Size = UDim2.new(1, -WindowPadding * 2, 1, -ContentTop - FooterHeight)
-            FitTopTabsBounds()
         end
+        local Left = if SidebarShown then HeaderRightX else WindowPadding
+        Container.Position = UDim2.fromOffset(Left, ContentTop)
+        Container.Size = UDim2.new(1, -Left - WindowPadding, 1, -ContentTop - BottomInset)
+        if StatusStrip then
+            StatusStrip.Position = UDim2.new(0, Left, 1, -FooterHeight - 2)
+            StatusStrip.Size = UDim2.new(1, -Left - WindowPadding, 0, 28)
+        end
+        FitTopTabsBounds()
         Tabs.CanvasPosition = Vector2.zero
 
         for _, Category in Categories do
@@ -14012,6 +14293,7 @@ function Library:CreateWindow(WindowInfo)
     --// Provider needs RefreshConfigList(), Save(Name), Load(Name); SaveJSON() and RefreshConfigUI() are optional.
     function Window:SetQuickConfig(Provider: any)
         Library.QuickConfigProvider = Provider
+        FolderButton.Visible = WindowInfo.TabLayout == "Side" or Provider ~= nil
         CloseQuickConfig()
     end
 
@@ -14116,6 +14398,16 @@ function Library:CreateWindow(WindowInfo)
             TextTransparency = 0.5,
             Parent = TabButton,
         })
+        -- A separate child keeps the underline out of the tab's horizontal layout.
+        local Underline = if Parent then nil else New("Frame", {
+            AnchorPoint = Vector2.new(0, 1),
+            BackgroundColor3 = "AccentColor",
+            BorderSizePixel = 0,
+            Position = UDim2.new(0, 0, 1, 0),
+            Size = UDim2.new(1, 0, 0, 2),
+            Visible = false,
+            Parent = TabLabel,
+        })
 
         local Entry = {
             Button = TabButton,
@@ -14123,6 +14415,7 @@ function Library:CreateWindow(WindowInfo)
             Padding = ButtonPadding,
             Icon = TabIcon,
             Bar = TabBar,
+            Underline = Underline,
             Sub = Parent ~= nil,
         }
         table.insert(Library.TabButtons, Entry)
@@ -15562,8 +15855,11 @@ function Library:CreateWindow(WindowInfo)
 
         function Tab:SetSelected(Selected: boolean)
             Tab.Selected = Selected == true
-            --// The side column marks the active tab with an accent bar instead of a filled pill
-            local Pill = Selected and not (TabBar and WindowInfo.TabLayout == "Side")
+            --// Top tabs mark selection with a lime underline; sub-tabs keep their pill.
+            local Pill = Selected and not TabBar
+            if _TabEntry.Underline then
+                _TabEntry.Underline.Visible = Selected and WindowInfo.TabLayout == "Top"
+            end
             TweenService:Create(TabButton, Library.TweenInfo, {
                 BackgroundTransparency = Pill and 0 or 1,
             }):Play()
@@ -17518,9 +17814,6 @@ function Library:CreateWindow(WindowInfo)
     --// quiet "island" pill at the top of the screen. The island always stays clickable, so there's always a way back
     --// (on PC the floating toggle button is hidden by default, which used to leave nothing to reopen with).
     do
-        local IslandColor = Color3.fromRGB(14, 14, 16)
-        local IslandText = Color3.fromRGB(235, 235, 240)
-        local IslandMuted = Color3.fromRGB(140, 140, 148)
         local IslandGlide = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
         local IslandFade = TweenInfo.new(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
         local IslandOut = TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
@@ -17532,7 +17825,7 @@ function Library:CreateWindow(WindowInfo)
         local Island = New("TextButton", {
             AnchorPoint = Vector2.new(0.5, 0),
             AutoButtonColor = false,
-            BackgroundColor3 = IslandColor,
+            BackgroundColor3 = "BackgroundColor",
             BackgroundTransparency = 1,
             ClipsDescendants = true,
             Position = UDim2.new(0.5, 0, 0, 12),
@@ -17548,19 +17841,19 @@ function Library:CreateWindow(WindowInfo)
         })
         local IslandStroke = New("UIStroke", {
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-            Color = Color3.fromRGB(255, 255, 255),
+            Color = "OutlineColor",
             Transparency = 1,
             Parent = Island,
         })
         table.insert(Library.Scales, New("UIScale", { Parent = Island }))
 
-        local function MakeIslandLabel(Text: string, Color: Color3)
+        local function MakeIslandLabel(Text: string, Color: string)
             return New("TextLabel", {
                 AnchorPoint = Vector2.new(0.5, 0.5),
                 BackgroundTransparency = 1,
                 FontFace = "FontBold",
                 Position = UDim2.fromScale(0.5, 0.5),
-                Size = UDim2.fromScale(1, 1),
+                Size = UDim2.new(1, -20, 1, 0),
                 Text = Text,
                 TextColor3 = Color,
                 TextSize = 15,
@@ -17570,8 +17863,8 @@ function Library:CreateWindow(WindowInfo)
                 Parent = Island,
             })
         end
-        local IslandTitle = MakeIslandLabel(WindowInfo.Title or "", IslandText)
-        local IslandHint = MakeIslandLabel(if Library.IsMobile then "Tap to open" else "Click to open", IslandMuted)
+        local IslandTitle = MakeIslandLabel(WindowInfo.Title or "", "FontColor")
+        local IslandHint = MakeIslandLabel(if Library.IsMobile then "Tap to open" else "Click to open", "MutedFontColor")
         IslandHint.Position = UDim2.new(0.5, 0, 0.5, 10)
 
         local Minimized = false
@@ -17588,7 +17881,7 @@ function Library:CreateWindow(WindowInfo)
 
         local function RefreshIsland()
             TweenService:Create(Island, IslandGlide, { Size = TargetSize() }):Play()
-            TweenService:Create(IslandStroke, IslandFade, { Transparency = if Hovering then 0.7 else 0.82 }):Play()
+            TweenService:Create(IslandStroke, IslandFade, { Transparency = if Hovering then 0.04 else 0.28 }):Play()
             TweenService:Create(IslandTitle, IslandFade, {
                 Position = UDim2.new(0.5, 0, 0.5, if Hovering then -10 else 0),
                 TextTransparency = if Hovering then 1 else 0,
@@ -17599,8 +17892,21 @@ function Library:CreateWindow(WindowInfo)
             }):Play()
         end
 
+        local function SetIslandTitle(State)
+            local Title = WindowInfo.Title or ""
+            local Text = if StatusHeight > 0 then Title .. "  ·  " .. State else Title
+            if IslandTitle.Text == Text then
+                return
+            end
+            IslandTitle.Text = Text
+            if Island.Visible and Minimized then
+                RefreshIsland()
+            end
+        end
+        RenderIslandStatus = SetIslandTitle
+
         local function ShowIsland()
-            IslandTitle.Text = WindowInfo.Title or ""
+            SetIslandTitle(ScriptStatus.Get().State)
             Island.Size = SeedSize
             Island.BackgroundTransparency = 1
             IslandStroke.Transparency = 1
