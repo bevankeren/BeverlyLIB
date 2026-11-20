@@ -285,11 +285,11 @@ local Library = {
     --// FontMedium and FontBold are derived from these when a theme omits them
     IsLightTheme = false,
     Scheme = {
-        BackgroundColor = Color3.fromRGB(13, 21, 17),
-        MainColor = Color3.fromRGB(21, 34, 27),
-        AccentColor = Color3.fromRGB(211, 246, 107),
-        OutlineColor = Color3.fromRGB(53, 74, 60),
-        FontColor = Color3.fromRGB(238, 244, 233),
+        BackgroundColor = Color3.fromRGB(19, 19, 21),
+        MainColor = Color3.fromRGB(31, 31, 34),
+        AccentColor = Color3.fromRGB(186, 187, 192),
+        OutlineColor = Color3.fromRGB(54, 54, 58),
+        FontColor = Color3.fromRGB(224, 224, 226),
         Font = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium),
 
         RedColor = Color3.fromRGB(255, 50, 50),
@@ -385,6 +385,8 @@ local Templates = {
         Footer = "",
         ScriptStatus = true,
         ScriptHeartbeatTimeout = 6,
+        IconRail = true,
+        AdaptiveColumns = true,
         Version = nil, --// shown under the title, e.g. "0.0.0.2" -> "Version: 0.0.0.2"
 
         Position = UDim2.fromOffset(6, 6),
@@ -7787,7 +7789,7 @@ do
         return Button
     end
 
-    function Funcs:AddCheckbox(Idx, Info)
+    function Funcs:AddCheckbox(Idx, Info, RenderAsSwitch)
         if self.Destroyed then return nil end
 
         Info = Library:Validate(Info, Templates.Toggle)
@@ -7816,7 +7818,7 @@ do
             Addons = {},
             AnyKeyPickerPicking = false,
 
-            Variant = "Checkbox",
+            Variant = if RenderAsSwitch then "Switch" else "Checkbox",
             Type = "Toggle",
 
             Parent = Groupbox,
@@ -7825,7 +7827,7 @@ do
         local Button = New("TextButton", {
             Active = not Toggle.Disabled,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 18),
+            Size = UDim2.new(1, 0, 0, if RenderAsSwitch then 24 else 18),
             Text = "",
             Visible = Toggle.Visible,
             Parent = Container,
@@ -7833,8 +7835,8 @@ do
 
         local Label = New("TextLabel", {
             BackgroundTransparency = 1,
-            Position = UDim2.fromOffset(22, 0),
-            Size = UDim2.new(1, -22, 1, 0),
+            Position = UDim2.fromOffset(if RenderAsSwitch then 0 else 22, 0),
+            Size = UDim2.new(1, if RenderAsSwitch then -40 else -22, 1, 0),
             Text = Toggle.Text,
             TextSize = 13,
             TextTransparency = 0.45,
@@ -7851,19 +7853,19 @@ do
         })
 
         local Checkbox = New("Frame", {
-            AnchorPoint = Vector2.new(0, 0.5),
+            AnchorPoint = Vector2.new(if RenderAsSwitch then 1 else 0, 0.5),
             BackgroundColor3 = "ToggleOffColor",
-            Position = UDim2.fromScale(0, 0.5),
-            Size = UDim2.fromOffset(14, 14),
+            Position = UDim2.fromScale(if RenderAsSwitch then 1 else 0, 0.5),
+            Size = if RenderAsSwitch then UDim2.fromOffset(32, 17) else UDim2.fromOffset(14, 14),
             Parent = Button,
         })
-        table.insert(
-            Library.Corners,
-            New("UICorner", {
-                CornerRadius = UDim.new(0, Library.CornerRadius / 2),
-                Parent = Checkbox,
-            })
-        )
+        local CheckboxCorner = New("UICorner", {
+            CornerRadius = if RenderAsSwitch then UDim.new(1, 0) else UDim.new(0, Library.CornerRadius / 2),
+            Parent = Checkbox,
+        })
+        if not RenderAsSwitch then
+            table.insert(Library.Corners, CheckboxCorner)
+        end
         local CheckboxScale = New("UIScale", {
             Parent = Checkbox,
         })
@@ -7879,6 +7881,18 @@ do
             Rotation = 90,
             Parent = Checkbox,
         })
+        local Knob = if RenderAsSwitch then New("Frame", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundColor3 = "WhiteColor",
+            BorderSizePixel = 0,
+            Position = UDim2.new(0, 2, 0.5, 0),
+            Size = UDim2.fromOffset(13, 13),
+            Parent = Checkbox,
+        }) else nil
+        if Knob then
+            New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Knob })
+        end
+        local PreviousKnobValue
 
         local Interaction = BindInteraction(Button, {
             Scale = CheckboxScale,
@@ -7904,6 +7918,18 @@ do
             local Edge = Toggle.Value and "AccentColor" or "OutlineColor"
             Library.Registry[Checkbox].BackgroundColor3 = Fill
             Library.Registry[CheckboxStroke].Color = Edge
+            if Knob then
+                Knob.BackgroundTransparency = if Toggle.Disabled then 0.58 elseif Toggle.Value then 0.12 else 0.42
+                if PreviousKnobValue ~= Toggle.Value then
+                    local Target = UDim2.new(0, if Toggle.Value then 17 else 2, 0.5, 0)
+                    if PreviousKnobValue == nil or Toggle.Disabled then
+                        Knob.Position = Target
+                    else
+                        TweenService:Create(Knob, Library.HoverTweenInfo, { Position = Target }):Play()
+                    end
+                    PreviousKnobValue = Toggle.Value
+                end
+            end
 
             if Toggle.Disabled then
                 Label.TextTransparency = 0.8
@@ -8063,9 +8089,9 @@ do
         return Toggle
     end
 
-    --// Toggles always render as checkboxes; AddToggle stays as the familiar entry point
+    --// Keep explicit checkboxes available; the regular toggle uses a right-aligned switch.
     function Funcs:AddToggle(Idx, Info)
-        return Funcs.AddCheckbox(self, Idx, Info)
+        return Funcs.AddCheckbox(self, Idx, Info, true)
     end
 
     function Funcs:AddInput(Idx, Info)
@@ -9018,6 +9044,23 @@ do
             ZIndex = 2,
             Parent = Holder,
         })
+
+        local function FitDropdown()
+            local Width = Holder.AbsoluteSize.X / Library.DPIScale
+            local HasLabel = Dropdown.Text ~= nil and Dropdown.Text ~= ""
+            local Inline = HasLabel and Width >= 240
+            local FieldWidth = math.min(158, math.floor(Width * 0.49))
+            Holder.Size = UDim2.new(1, 0, 0, if Inline then 27 elseif HasLabel then 41 else 23)
+            Label.AnchorPoint = if Inline then Vector2.new(0, 0.5) else Vector2.zero
+            Label.Position = UDim2.new(0, 0, if Inline then 0.5 else 0, 0)
+            Label.Size = UDim2.new(1, if Inline then -FieldWidth - 8 else 0, 0, 14)
+            Label.TextTruncate = Enum.TextTruncate.AtEnd
+            DisplayContainer.AnchorPoint = if Inline then Vector2.new(1, 0.5) else Vector2.new(0, 1)
+            DisplayContainer.Position = if Inline then UDim2.fromScale(1, 0.5) else UDim2.fromScale(0, 1)
+            DisplayContainer.Size = if Inline then UDim2.fromOffset(FieldWidth, 23) else UDim2.new(1, 0, 0, 23)
+        end
+        table.insert(Dropdown.Connections, Holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(FitDropdown))
+        FitDropdown()
 
         New("UIPadding", {
             PaddingLeft = UDim.new(0, 8),
@@ -10033,10 +10076,10 @@ do
 
         function Dropdown:SetText(Text: string)
             Dropdown.Text = Text
-            Holder.Size = UDim2.new(1, 0, 0, Text and 41 or 23)
-
             Label.Text = Text and Text or ""
-            Label.Visible = not not Text
+            Label.Visible = Text ~= nil and Text ~= ""
+            FitDropdown()
+            Groupbox:Resize()
         end
 
         function Dropdown:SetDragSelect(Value: boolean)
@@ -12111,16 +12154,46 @@ local function CreateScriptStatusTracker(Timeout, Clock, Schedule, Cancel, Rende
     }
 end
 
+local function FitGraphiteHeader(Width, ActionWidth, Padding, ShowSearch)
+    local Gap = 8
+    local TitleStart = Padding + 2
+    local ActionStart = math.max(TitleStart, Width - Padding - ActionWidth)
+    local SearchMin = TitleStart + math.min(112, math.floor(Width * 0.36)) + Gap
+    local Available = math.max(0, ActionStart - Gap - SearchMin)
+    local SearchWidth = if ShowSearch and Available >= 48
+        then math.min(Available, math.clamp(math.floor(Width * 0.36), 64, 224))
+        else 0
+    local SearchLeft = if SearchWidth > 0
+        then math.clamp(math.floor((Width - SearchWidth) / 2), SearchMin, ActionStart - Gap - SearchWidth)
+        else ActionStart
+    local TitleWidth = math.max(0, SearchLeft - Gap - TitleStart)
+    return SearchLeft, SearchWidth, TitleWidth
+end
+
+local function HasColumnContent(Column)
+    for _, Child in Column:GetChildren() do
+        if Child:IsA("GuiObject") and Child.Name ~= "ColumnSpacer" then
+            return true
+        end
+    end
+    return false
+end
+
 local function CreateScriptPulse(Parent, Animate)
     local Strip = New("Frame", {
         Name = "FluffyPulse",
         AnchorPoint = Vector2.new(0, 1),
-        BackgroundColor3 = "MainColor",
+        BackgroundColor3 = "BackgroundColor",
         Size = UDim2.new(1, 0, 0, 28),
         ZIndex = 4,
         Parent = Parent,
     })
-    New("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Strip })
+    New("Frame", {
+        BackgroundColor3 = "OutlineColor",
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 1),
+        Parent = Strip,
+    })
     local Trace = New("Frame", {
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(9, 6),
@@ -12167,6 +12240,24 @@ local function CreateScriptPulse(Parent, Animate)
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = Strip,
     })
+    local SectionLabel = New("TextLabel", {
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Position = UDim2.new(1, -10, 0, 0),
+        Size = UDim2.fromOffset(78, 28),
+        Text = "Fluffy Pulse",
+        TextColor3 = "MutedFontColor",
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Parent = Strip,
+    })
+    local function FitLabel()
+        local Room = Strip.AbsoluteSize.X / Library.DPIScale >= 320
+        SectionLabel.Visible = Room
+        StatusText.Size = UDim2.new(1, if Room then -156 else -72, 1, 0)
+    end
+    Library:GiveSignal(Strip:GetPropertyChangedSignal("AbsoluteSize"):Connect(FitLabel))
+    FitLabel()
     local Phase = New("NumberValue", { Value = -2, Parent = Strip })
     local ActiveTween
     local LastFlash = -math.huge
@@ -12247,7 +12338,7 @@ function Library:CreateWindow(WindowInfo)
 
     --// Shell layout: header, tab strip, content, footer
     local WindowPadding = 10
-    --// Top: [title | actions] over [tabs | search]. Side keeps its picker.
+    --// Top: centered search over a tab strip; the icon rail is independent of legacy Side mode.
     local HeaderRowHeight = 48
     local TabBarHeight = if Library.IsMobile then 44 else 34
     local HeaderHeight = HeaderRowHeight + TabBarHeight
@@ -12258,6 +12349,7 @@ function Library:CreateWindow(WindowInfo)
     local SidebarWidth = WindowPadding * 2 + SearchWidth
     local HeaderRightX = SidebarWidth + 12
     local ContentTop = HeaderHeight + 8
+    local RailWidth = if WindowInfo.IconRail == false then 0 elseif Library.IsMobile then 42 else 44
 
     --// Grip sits in the footer's corner, inset further as the window corner rounds
     local function GetResizeGripPosition(Radius: number): UDim2
@@ -12304,6 +12396,7 @@ function Library:CreateWindow(WindowInfo)
     local UsernameLabel
     local BadgeLabel
     local SearchBox
+    local SearchPadding, SearchHint
     local CurrentTabInfo
     local CurrentTabLabel
     local CurrentTabDescription
@@ -12338,6 +12431,8 @@ function Library:CreateWindow(WindowInfo)
     local RefreshWindowTitleSize
     local FitTopTabsBounds
     local StatusStrip, RenderStatus, RenderIslandStatus
+    local IconRail, HeaderDivider
+    local RailEntries = {}
 
     do
         local KeybindFrame, KeybindContainer, _, KeybindDivider, KeybindLabelPadding = Library:AddDraggableMenu("Keybinds")
@@ -12790,20 +12885,17 @@ function Library:CreateWindow(WindowInfo)
             })
         else
             WindowIcon = New("TextLabel", {
-                BackgroundColor3 = "AccentColor",
+                BackgroundColor3 = "MainColor",
                 BorderSizePixel = 0,
                 FontFace = "FontBold",
-                Size = UDim2.fromOffset(26, 26),
+                Size = UDim2.fromOffset(23, 23),
                 Text = "F",
-                TextColor3 = function()
-                    local Accent = Library.Scheme.AccentColor
-                    local Luminance = Accent.R * 0.299 + Accent.G * 0.587 + Accent.B * 0.114
-                    return if Luminance > 0.55 then Color3.fromRGB(13, 21, 17) else Color3.new(1, 1, 1)
-                end,
-                TextSize = 16,
+                TextColor3 = "FontColor",
+                TextSize = 14,
                 Parent = TitleHolder,
             })
             New("UICorner", { CornerRadius = UDim.new(0, 6), Parent = WindowIcon })
+            New("UIStroke", { Color = "OutlineColor", Parent = WindowIcon })
         end
 
         --// Title with the version stacked underneath
@@ -12997,7 +13089,8 @@ function Library:CreateWindow(WindowInfo)
             BackgroundTransparency = 0,
             ClearTextOnFocus = false,
             LayoutOrder = 1,
-            PlaceholderText = "Search settings",
+            PlaceholderText = "Search",
+            PlaceholderColor3 = "MutedFontColor",
             Position = UDim2.fromOffset(WindowPadding, HeaderRowHeight),
             Size = UDim2.fromOffset(SearchWidth, 34),
             TextSize = 13,
@@ -13012,15 +13105,26 @@ function Library:CreateWindow(WindowInfo)
                 Parent = SearchBox,
             })
         )
-        New("UIPadding", {
-            PaddingLeft = UDim.new(0, 32),
+        SearchPadding = New("UIPadding", {
+            PaddingLeft = UDim.new(0, 26),
             PaddingRight = UDim.new(0, 8),
             Parent = SearchBox,
         })
         local SearchBoxStroke = New("UIStroke", {
             Color = "OutlineColor",
-            Transparency = 1,
+            Transparency = 0.2,
             Parent = SearchBox,
+        })
+        SearchHint = New("TextLabel", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(34, 19),
+            Text = "Ctrl K",
+            TextColor3 = "MutedFontColor",
+            TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Visible = false,
+            Parent = TopBar,
         })
 
         Library:GiveSignal(SearchBox.Focused:Connect(function()
@@ -13035,7 +13139,7 @@ function Library:CreateWindow(WindowInfo)
             Library.Registry[SearchBoxStroke].Color = "OutlineColor"
             TweenService:Create(SearchBoxStroke, Library.HoverTweenInfo, {
                 Color = Library.Scheme.OutlineColor,
-                Transparency = 1,
+                Transparency = 0.2,
             }):Play()
         end))
 
@@ -13044,11 +13148,13 @@ function Library:CreateWindow(WindowInfo)
             local SearchIconImage = New("ImageLabel", {
                 AnchorPoint = Vector2.new(0, 0.5),
                 ImageColor3 = "MutedFontColor",
-                Position = UDim2.new(0, -22, 0.5, 0),
+                Position = UDim2.new(0, -18, 0.5, 0),
                 Size = UDim2.fromOffset(14, 14),
                 Parent = SearchBox,
             })
             Library:ApplyLucideIcon(SearchIconImage, SearchIcon)
+        else
+            SearchPadding.PaddingLeft = UDim.new(0, 8)
         end
 
         --// Folder button (hides/shows the sidebar) and the tab picker, side layout only
@@ -13722,7 +13828,40 @@ function Library:CreateWindow(WindowInfo)
         })
 
         --// Container \\--
-        --// The top tab strip gets whatever the right cluster leaves on the first header row
+        IconRail = New("ScrollingFrame", {
+            Name = "IconRail",
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = "MainColor",
+            BackgroundTransparency = 0.5,
+            BorderSizePixel = 0,
+            CanvasSize = UDim2.fromOffset(0, 0),
+            Position = UDim2.fromOffset(1, HeaderRowHeight + 1),
+            ScrollBarThickness = 0,
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+            Size = UDim2.new(0, math.max(0, RailWidth - 1), 1, -HeaderRowHeight - BottomInset - 1),
+            Visible = false,
+            Parent = MainFrame,
+        })
+        New("UIListLayout", {
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            Padding = UDim.new(0, 4),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = IconRail,
+        })
+        New("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6), Parent = IconRail })
+        local IconRailDivider = New("Frame", {
+            BackgroundColor3 = "OutlineColor",
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(RailWidth, HeaderRowHeight + 1),
+            Size = UDim2.new(0, 1, 1, -HeaderRowHeight - BottomInset - 1),
+            Visible = false,
+            Parent = MainFrame,
+        })
+        Library:GiveSignal(IconRail:GetPropertyChangedSignal("Visible"):Connect(function()
+            IconRailDivider.Visible = IconRail.Visible
+        end))
+
+        --// Keep the centered search clear of title and header actions at every window width.
         local function FitTopTabs()
             local RightWidth = RightWrapper.AbsoluteSize.X / Library.DPIScale
             if WindowInfo.TabLayout == "Side" then
@@ -13730,13 +13869,18 @@ function Library:CreateWindow(WindowInfo)
                 return
             end
             local Width = MainFrame.AbsoluteSize.X / Library.DPIScale
-            local SearchInset = if SearchBox.Visible then math.clamp(math.floor(Width * 0.33), 92, 164) else 0
-            local SearchHeight = if Library.IsMobile then 44 else 30
-            SearchBox.Position = UDim2.new(1, -WindowPadding - SearchInset, 0, HeaderRowHeight + (TabBarHeight - SearchHeight) / 2)
-            SearchBox.Size = UDim2.fromOffset(SearchInset, SearchHeight)
-            Tabs.Position = UDim2.fromOffset(WindowPadding, HeaderRowHeight)
-            Tabs.Size = UDim2.new(1, -WindowPadding * 2 - SearchInset - (if SearchInset > 0 then 8 else 0), 0, TabBarHeight)
-            TitleHolder.Size = UDim2.new(1, -WindowPadding * 2 - RightWidth - 12, 0, HeaderRowHeight)
+            local SearchLeft, BoxWidth, TitleWidth = FitGraphiteHeader(Width, RightWidth, WindowPadding, not WindowInfo.DisableSearch)
+            local SearchHeight = if Library.IsMobile then 40 else 29
+            SearchBox.Visible = BoxWidth > 0
+            SearchBox.Position = UDim2.fromOffset(SearchLeft, math.floor((HeaderRowHeight - SearchHeight) / 2))
+            SearchBox.Size = UDim2.fromOffset(BoxWidth, SearchHeight)
+            SearchHint.Visible = not Library.IsMobile and BoxWidth >= 148
+            SearchHint.Position = UDim2.fromOffset(SearchLeft + BoxWidth - 8, HeaderRowHeight / 2)
+            SearchPadding.PaddingRight = UDim.new(0, if SearchHint.Visible then 47 else 8)
+            local Left = WindowPadding + (if IconRail.Visible then RailWidth else 0)
+            Tabs.Position = UDim2.fromOffset(Left, HeaderRowHeight + 1)
+            Tabs.Size = UDim2.new(1, -Left - WindowPadding, 0, TabBarHeight)
+            TitleHolder.Size = UDim2.fromOffset(TitleWidth, HeaderRowHeight)
         end
         FitTopTabsBounds = FitTopTabs
         Library:GiveSignal(RightWrapper:GetPropertyChangedSignal("AbsoluteSize"):Connect(FitTopTabs))
@@ -13751,11 +13895,11 @@ function Library:CreateWindow(WindowInfo)
             Size = UDim2.new(1, -WindowPadding * 2, 1, -ContentTop - BottomInset),
             Parent = MainFrame,
         })
-        New("Frame", {
+        HeaderDivider = New("Frame", {
             BackgroundColor3 = "OutlineColor",
             BorderSizePixel = 0,
-            Position = UDim2.fromOffset(WindowPadding, HeaderHeight + 2),
-            Size = UDim2.new(1, -WindowPadding * 2, 0, 1),
+            Position = UDim2.fromOffset(1, HeaderRowHeight),
+            Size = UDim2.new(1, -2, 0, 1),
             Parent = MainFrame,
         })
         if StatusHeight > 0 then
@@ -14190,6 +14334,8 @@ function Library:CreateWindow(WindowInfo)
         local Side = Layout == "Side"
         local SidebarShown = Side and not Window.SidebarHidden
         SidebarPanel.Visible = SidebarShown
+        IconRail.Visible = not Side and RailWidth > 0 and not Window.SidebarHidden
+        HeaderDivider.Visible = not Side
         --// The profile card takes the footer's left corner while the sidebar is showing
         ProfileCard.Visible = WindowInfo.ShowProfile ~= false
         FooterLeftLabel.Visible = not (SidebarShown and ProfileCard.Visible)
@@ -14198,6 +14344,9 @@ function Library:CreateWindow(WindowInfo)
             FolderButton.Position = UDim2.fromOffset(HeaderRightX, HeaderRowHeight / 2)
             FolderButton.Size = UDim2.fromOffset(36, 36)
             local SearchHeight = if Library.IsMobile then 44 else 34
+            SearchBox.Visible = not WindowInfo.DisableSearch
+            SearchHint.Visible = false
+            SearchPadding.PaddingRight = UDim.new(0, 8)
             SearchBox.Position = UDim2.fromOffset(WindowPadding, HeaderRowHeight)
             SearchBox.Size = UDim2.fromOffset(SearchWidth, SearchHeight)
         else
@@ -14229,12 +14378,13 @@ function Library:CreateWindow(WindowInfo)
             TabsPadding.PaddingTop = UDim.new(0, 0)
             TabsPadding.PaddingBottom = UDim.new(0, 0)
         end
-        local Left = if SidebarShown then HeaderRightX else WindowPadding
+        local Left = if SidebarShown then HeaderRightX else WindowPadding + (if IconRail.Visible then RailWidth else 0)
         Container.Position = UDim2.fromOffset(Left, ContentTop)
         Container.Size = UDim2.new(1, -Left - WindowPadding, 1, -ContentTop - BottomInset)
         if StatusStrip then
-            StatusStrip.Position = UDim2.new(0, Left, 1, -FooterHeight - 2)
-            StatusStrip.Size = UDim2.new(1, -Left - WindowPadding, 0, 28)
+            local StatusLeft = if SidebarShown then HeaderRightX else 1
+            StatusStrip.Position = UDim2.new(0, StatusLeft, 1, -FooterHeight - 2)
+            StatusStrip.Size = UDim2.new(1, -StatusLeft - (if SidebarShown then WindowPadding else 1), 0, 28)
         end
         FitTopTabsBounds()
         Tabs.CanvasPosition = Vector2.zero
@@ -14320,6 +14470,83 @@ function Library:CreateWindow(WindowInfo)
     end
 
     function Window:HideTabInfo() end
+
+    local function SyncIconRail()
+        local Active = Library.ActiveTab
+        while Active and Active.ParentTab do
+            Active = Active.ParentTab
+        end
+        for Tab, Entry in RailEntries do
+            local Selected = Tab == Active
+            Entry.Selected = Selected
+            Entry.Button.BackgroundTransparency = if Selected then 0 else 1
+            Entry.Marker.Visible = Selected
+        end
+    end
+
+    local function RegisterIconRail(Tab, SourceButton, Name, Icon)
+        if RailWidth == 0 or Tab.ParentTab then
+            return
+        end
+        local Button = New("TextButton", {
+            Name = "Shortcut",
+            AutoButtonColor = false,
+            BackgroundColor3 = "HoverColor",
+            BackgroundTransparency = 1,
+            FontFace = "FontMedium",
+            LayoutOrder = SourceButton.LayoutOrder,
+            Size = UDim2.fromOffset(RailWidth - 10, if Library.IsMobile then 40 else 33),
+            Text = if Icon then "" else tostring(Name):match("^%a") or "•",
+            TextSize = 13,
+            Visible = SourceButton.Visible,
+            Parent = IconRail,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, 7), Parent = Button })
+        local Marker = New("Frame", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundColor3 = "AccentColor",
+            BorderSizePixel = 0,
+            Position = UDim2.fromScale(0, 0.5),
+            Size = UDim2.fromOffset(2, 15),
+            Visible = false,
+            Parent = Button,
+        })
+        if Icon then
+            Library:CreateIcon(Icon, {
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                ImageColor3 = if Icon.Custom then "WhiteColor" else "FontColor",
+                Position = UDim2.fromScale(0.5, 0.5),
+                Size = UDim2.fromOffset(15, 15),
+                Parent = Button,
+            })
+        end
+        local Entry = { Button = Button, Marker = Marker, Selected = false }
+        RailEntries[Tab] = Entry
+        Button.Activated:Connect(function()
+            if SourceButton.Visible then
+                Tab:Show()
+            end
+        end)
+        Button.MouseEnter:Connect(function()
+            Button.BackgroundTransparency = if Entry.Selected then 0 else 0.48
+        end)
+        Button.MouseLeave:Connect(function()
+            Button.BackgroundTransparency = if Entry.Selected then 0 else 1
+        end)
+        SourceButton:GetPropertyChangedSignal("Visible"):Connect(function()
+            Button.Visible = SourceButton.Visible
+        end)
+        SourceButton:GetPropertyChangedSignal("LayoutOrder"):Connect(function()
+            Button.LayoutOrder = SourceButton.LayoutOrder
+        end)
+        local Tooltip = Library:AddTooltip(tostring(Name), nil, Button)
+        SourceButton.Destroying:Connect(function()
+            RailEntries[Tab] = nil
+            Tooltip:Destroy()
+            Button:Destroy()
+        end)
+        SyncIconRail()
+    end
 
     --// Tab strip pill: icon + label, filled and outlined while active
     local function CreateTabButton(Name, Icon, Order, Parent, ButtonParent)
@@ -14606,6 +14833,7 @@ function Library:CreateWindow(WindowInfo)
                 Tab:SetSelected(Open)
             end
         end
+        SyncIconRail()
     end
 
     function Window:AddTab(...)
@@ -14687,11 +14915,13 @@ function Library:CreateWindow(WindowInfo)
             })
             do
                 New("Frame", {
+                    Name = "ColumnSpacer",
                     BackgroundTransparency = 1,
                     LayoutOrder = -1,
                     Parent = TabLeft,
                 })
                 New("Frame", {
+                    Name = "ColumnSpacer",
                     BackgroundTransparency = 1,
                     LayoutOrder = 1,
                     Parent = TabLeft,
@@ -14722,11 +14952,13 @@ function Library:CreateWindow(WindowInfo)
             })
             do
                 New("Frame", {
+                    Name = "ColumnSpacer",
                     BackgroundTransparency = 1,
                     LayoutOrder = -1,
                     Parent = TabRight,
                 })
                 New("Frame", {
+                    Name = "ColumnSpacer",
                     BackgroundTransparency = 1,
                     LayoutOrder = 1,
                     Parent = TabRight,
@@ -14916,12 +15148,29 @@ function Library:CreateWindow(WindowInfo)
 
         function Tab:RefreshSides()
             local Offset = WarningBoxHolder.Visible and WarningBox.Size.Y.Offset + 8 or 0
-            for _, Side in Tab.Sides do
+            local Adaptive = WindowInfo.AdaptiveColumns ~= false
+            local HasLeft = not Adaptive or HasColumnContent(TabLeft)
+            local HasRight = not Adaptive or HasColumnContent(TabRight)
+            local Split = HasLeft and HasRight
+            for Index, Side in Tab.Sides do
+                Side.Visible = if Index == 1 then HasLeft else HasRight
                 Side.Position = UDim2.new(Side.Position.X.Scale, 0, 0, Offset)
-                Side.Size = UDim2.new(0.5, -4, 1, -Offset)
+                Side.Size = UDim2.new(if Split then 0.5 else 1, if Split then -4 else 0, 1, -Offset)
             end
         end
         table.insert(Tab.Connections, TabContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() Tab:RefreshSides() end))
+        if WindowInfo.AdaptiveColumns ~= false then
+            for _, Side in Tab.Sides do
+                local function RefreshForChild(Child)
+                    if Child:IsA("GuiObject") and not Tab.Destroyed then
+                        Tab:RefreshSides()
+                    end
+                end
+                table.insert(Tab.Connections, Side.ChildAdded:Connect(RefreshForChild))
+                table.insert(Tab.Connections, Side.ChildRemoved:Connect(RefreshForChild))
+            end
+        end
+        Tab:RefreshSides()
 
         function Tab:Resize(ResizeWarningBox: boolean?)
             if ResizeWarningBox then
@@ -15405,9 +15654,14 @@ function Library:CreateWindow(WindowInfo)
 
             do
                 GroupboxHolder = New("Frame", {
-                    BackgroundColor3 = "SurfaceColor",
+                    BackgroundColor3 = "MainColor",
                     Size = UDim2.fromScale(1, 0),
                     Parent = BoxHolder,
+                })
+                New("UIGradient", {
+                    Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(229, 229, 229)),
+                    Rotation = 90,
+                    Parent = GroupboxHolder,
                 })
                 table.insert(
                     Library.Corners,
@@ -15855,8 +16109,8 @@ function Library:CreateWindow(WindowInfo)
 
         function Tab:SetSelected(Selected: boolean)
             Tab.Selected = Selected == true
-            --// Top tabs mark selection with a lime underline; sub-tabs keep their pill.
-            local Pill = Selected and not TabBar
+            --// Top tabs carry a muted fill and a thin active underline.
+            local Pill = Selected and (not TabBar or WindowInfo.TabLayout == "Top")
             if _TabEntry.Underline then
                 _TabEntry.Underline.Visible = Selected and WindowInfo.TabLayout == "Top"
             end
@@ -15932,6 +16186,7 @@ function Library:CreateWindow(WindowInfo)
 
             Library.PreviousTab = Tab
             Library.ActiveTab = nil
+            SyncIconRail()
         end
 
         --// Adds a tab inside this one; its button sits in a strip above the content while this tab is open
@@ -16108,6 +16363,7 @@ function Library:CreateWindow(WindowInfo)
         TabButton.MouseButton1Click:Connect(Tab.Show)
 
         Library.Tabs[TabKey] = Tab
+        RegisterIconRail(Tab, TabButton, Name, Icon)
 
         return Tab
     end
@@ -16650,6 +16906,7 @@ function Library:CreateWindow(WindowInfo)
 
             Library.PreviousTab = Tab
             Library.ActiveTab = nil
+            SyncIconRail()
         end
 
         function Tab:SetVisible(Visible: boolean)
@@ -16694,6 +16951,7 @@ function Library:CreateWindow(WindowInfo)
         setmetatable(Tab, BaseGroupbox)
 
         Library.Tabs[Name] = Tab
+        RegisterIconRail(Tab, TabButton, Name, Icon)
 
         return Tab
     end
@@ -16885,6 +17143,7 @@ function Library:CreateWindow(WindowInfo)
             end
 
             Library.ActiveTab = Tab
+            SyncIconRail()
 
             if Library.Searching then
                 Library:UpdateSearch(Library.SearchText)
@@ -16915,6 +17174,7 @@ function Library:CreateWindow(WindowInfo)
 
             Library.PreviousTab = Tab
             Library.ActiveTab = nil
+            SyncIconRail()
         end
 
         function Tab:SetVisible(Visible: boolean)
@@ -16997,6 +17257,7 @@ function Library:CreateWindow(WindowInfo)
         table.insert(Tab.Connections, TabButton.MouseButton1Click:Connect(Tab.Show))
 
         Library.Tabs[Name] = Tab
+        RegisterIconRail(Tab, TabButton, Name, Icon)
 
         return TabContainer, Tab
     end
@@ -18009,9 +18270,18 @@ function Library:CreateWindow(WindowInfo)
         Library:UpdateSearch(SearchBox.Text)
     end))
 
-    Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input: InputObject)
+    Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input: InputObject, GameProcessed: boolean)
         if Library.Unloaded then
             return
+        end
+
+        if not GameProcessed and Input.KeyCode == Enum.KeyCode.K and MainFrame.Visible and SearchBox.Visible
+            and (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
+            local Focused = UserInputService:GetFocusedTextBox()
+            if not Focused or Focused == SearchBox then
+                SearchBox:CaptureFocus()
+                return
+            end
         end
 
         if Input.KeyCode == Enum.KeyCode.Escape then

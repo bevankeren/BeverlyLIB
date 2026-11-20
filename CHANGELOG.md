@@ -1,5 +1,9 @@
 ## 20.11.2026
 
+- Made **Graphite Silver** the Fluffy Hub default: charcoal panels, silver controls, and a centered search with Ctrl+K.
+- Added a top-layout icon rail, adaptive one-/two-column tabs, right-aligned wide dropdowns, and switch rendering for `AddToggle`. Kept `AddCheckbox`, legacy Side layout, and Moss + Lime available.
+- Made Fluffy Pulse read as a footer strip without changing what qualifies as a heartbeat.
+
 - Restyled the default window and minimized pill for Fluffy Hub: Moss + Lime, top tabs with an active underline, and matte surfaces. Side layout and existing custom themes remain available.
 - Added the Fluffy Pulse status strip, heartbeat timeout and recovery, custom status detail, and a read-only snapshot of heartbeat count and age.
 - Added **Legacy Mono** to ThemeManager for the previous default palette.

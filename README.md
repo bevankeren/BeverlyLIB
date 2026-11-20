@@ -1,6 +1,8 @@
 # BeverlyLIB · Fluffy Hub UI
 
-The default Fluffy Hub appearance uses Moss + Lime and a horizontal tab strip. Existing callers can still pass `TabLayout = "Side"`; the old palette is available in ThemeManager as **Legacy Mono**.
+The default Fluffy Hub appearance is **Graphite Silver**: charcoal surfaces, muted silver controls, a centered search field (`Left Ctrl+K` while the window is open), and a slim icon rail alongside the top tabs. The rail follows tab selection and uses the tab's icon, or its initial when no icon is available. Explicit `AddCheckbox` controls are unchanged; `AddToggle` now uses a switch. On wide rows, labeled dropdowns sit on the right; narrow rows fall back to stacked fields.
+
+Existing callers can still use `TabLayout = "Side"`. In top layout, `IconRail = false` removes just the icon rail. Tabs with content on one side now use the full width; tabs with both sides populated keep two columns. Pass `AdaptiveColumns = false` to preserve two columns even when one side is empty. Saved themes are not overwritten; choose **Graphite Silver** in ThemeManager to switch back to it. **Moss + Lime** and **Legacy Mono** are still available.
 
 ## Fluffy Pulse
 
