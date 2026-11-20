@@ -1,8 +1,26 @@
 # BeverlyLIB · Fluffy Hub UI
 
-The default Fluffy Hub appearance is **Graphite Silver**: charcoal surfaces, muted silver controls, a centered search field (`Left Ctrl+K` while the window is open), and a slim icon rail alongside the top tabs. The rail follows tab selection and uses the tab's icon, or its initial when no icon is available. Explicit `AddCheckbox` controls are unchanged; `AddToggle` now uses a switch. On wide rows, labeled dropdowns sit on the right; narrow rows fall back to stacked fields.
+The default Fluffy Hub appearance is **Graphite Silver**: charcoal surfaces, muted silver controls, a centered search field (`Left Ctrl+K` while the window is open), and a slim icon rail for main navigation. The rail uses each module's icon, or its initial when no icon is available. Explicit `AddCheckbox` controls are unchanged; `AddToggle` now uses a switch. On wide rows, labeled dropdowns sit on the right; narrow rows fall back to stacked fields.
 
-Existing callers can still use `TabLayout = "Side"`. In top layout, `IconRail = false` removes just the icon rail. Tabs with content on one side now use the full width; tabs with both sides populated keep two columns. Pass `AdaptiveColumns = false` to preserve two columns even when one side is empty. Saved themes are not overwritten; choose **Graphite Silver** in ThemeManager to switch back to it. **Moss + Lime** and **Legacy Mono** are still available.
+Existing callers can still use `TabLayout = "Side"`. In top layout, `IconRail = false` restores the horizontal list of main tabs. Tabs with content on one side use the full width; tabs with both sides populated keep two columns. Pass `AdaptiveColumns = false` to preserve two columns even when one side is empty. Saved themes are not overwritten; choose **Graphite Silver** in ThemeManager to switch back to it. **Moss + Lime** and **Legacy Mono** are still available.
+
+## Contextual navigation
+
+With the icon rail enabled, `Window:AddTab` creates a module on the left. Use `module:AddSubTab` for its sections. The top strip shows only the active module's sections and is hidden when fewer than two sections are visible. Switching modules preserves each module's last visible section for the life of that window instance. If a selected section is hidden or removed, the module falls back to its first visible section or its own page.
+
+```luau
+local Home = Window:AddTab("Home", "house")
+local Presets = Window:AddTab("Presets", "layers")
+local Settings = Window:AddTab("Settings", "settings")
+
+local Saved = Presets:AddSubTab("Saved")
+local Transfer = Presets:AddSubTab("Import / Export")
+local Appearance = Settings:AddSubTab("Appearance")
+local Input = Settings:AddSubTab("Input")
+local About = Settings:AddSubTab("About")
+
+-- Add components directly to Home, and to each sub-tab for grouped modules.
+```
 
 ## Fluffy Pulse
 

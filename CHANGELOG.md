@@ -1,3 +1,8 @@
+## 21.11.2026
+
+- Made the Graphite Silver icon rail the primary navigation. The top bar now shows only the active module's sections, remembers each module's last section, and disappears for single-page modules.
+- Kept the legacy sidebar and horizontal root-tab layouts available for existing callers.
+
 ## 20.11.2026
 
 - Made **Graphite Silver** the Fluffy Hub default: charcoal panels, silver controls, and a centered search with Ctrl+K.

@@ -12179,6 +12179,33 @@ local function HasColumnContent(Column)
     return false
 end
 
+-- A module owns its last usable section. Hidden or destroyed sections cannot win a fallback.
+local function GetVisibleSection(Module)
+    local First, Remembered, Count = nil, nil, 0
+    for _, Section in Module.SubTabs or {} do
+        if not Section.Destroyed and Section.Button and Section.Button.Visible then
+            Count += 1
+            if not First or Section.Button.LayoutOrder < First.Button.LayoutOrder then
+                First = Section
+            end
+            if Section == Module.ActiveSubTab then
+                Remembered = Section
+            end
+        end
+    end
+    return Remembered or First, Count
+end
+
+local function IsWithinTab(Active, Tab)
+    while Active do
+        if Active == Tab then
+            return true
+        end
+        Active = Active.ParentTab
+    end
+    return false
+end
+
 local function CreateScriptPulse(Parent, Animate)
     local Strip = New("Frame", {
         Name = "FluffyPulse",
@@ -12430,6 +12457,7 @@ function Library:CreateWindow(WindowInfo)
 
     local RefreshWindowTitleSize
     local FitTopTabsBounds
+    local SyncSubTabStrips
     local StatusStrip, RenderStatus, RenderIslandStatus
     local IconRail, HeaderDivider
     local RailEntries = {}
@@ -14324,7 +14352,7 @@ function Library:CreateWindow(WindowInfo)
         Category.AnimToken = (Category.AnimToken or 0) + 1 --// cancels any running collapse animation
     end
 
-    --// Swaps the tab buttons between the top strip and a column left of the content
+    --// With a rail, root tabs move out of the top strip; only the active module's sections go there.
     function Window:SetTabLayout(Layout: string)
         Layout = if typeof(Layout) == "string" and string.lower(Layout) == "side" then "Side" else "Top"
         WindowInfo.TabLayout = Layout
@@ -14358,7 +14386,7 @@ function Library:CreateWindow(WindowInfo)
         CurrentTabLabel.Visible = Side
         CloseTabPicker()
         CloseQuickConfig()
-        Tabs.Visible = not Side or SidebarShown
+        Tabs.Visible = SidebarShown or (not Side and not IconRail.Visible)
         if Side then
             Tabs.AutomaticCanvasSize = Enum.AutomaticSize.Y
             Tabs.ScrollingDirection = Enum.ScrollingDirection.Y
@@ -14379,8 +14407,9 @@ function Library:CreateWindow(WindowInfo)
             TabsPadding.PaddingBottom = UDim.new(0, 0)
         end
         local Left = if SidebarShown then HeaderRightX else WindowPadding + (if IconRail.Visible then RailWidth else 0)
-        Container.Position = UDim2.fromOffset(Left, ContentTop)
-        Container.Size = UDim2.new(1, -Left - WindowPadding, 1, -ContentTop - BottomInset)
+        local NavigationTop = if IconRail.Visible then HeaderRowHeight + 8 else ContentTop
+        Container.Position = UDim2.fromOffset(Left, NavigationTop)
+        Container.Size = UDim2.new(1, -Left - WindowPadding, 1, -NavigationTop - BottomInset)
         if StatusStrip then
             local StatusLeft = if SidebarShown then HeaderRightX else 1
             StatusStrip.Position = UDim2.new(0, StatusLeft, 1, -FooterHeight - 2)
@@ -14404,6 +14433,9 @@ function Library:CreateWindow(WindowInfo)
             if Tab.SetSelected and Tab.Selected ~= nil then
                 Tab:SetSelected(Tab.Selected)
             end
+        end
+        if SyncSubTabStrips then
+            SyncSubTabStrips()
         end
 
         for _, Tab in Library.Tabs do
@@ -14626,7 +14658,7 @@ function Library:CreateWindow(WindowInfo)
             Parent = TabButton,
         })
         -- A separate child keeps the underline out of the tab's horizontal layout.
-        local Underline = if Parent then nil else New("Frame", {
+        local Underline = New("Frame", {
             AnchorPoint = Vector2.new(0, 1),
             BackgroundColor3 = "AccentColor",
             BorderSizePixel = 0,
@@ -14822,18 +14854,48 @@ function Library:CreateWindow(WindowInfo)
         return Category
     end
 
-    --// Parents with sub-tabs show their strip and stay lit while one of their sub-tabs is active
-    local function SyncSubTabStrips()
+    --// The header strip belongs to the immediate parent of the active page only.
+    SyncSubTabStrips = function()
         local Active = Library.ActiveTab
         for _, Tab in Library.Tabs do
-            if Tab.SubTabStrip then
-                local Open = Active ~= nil and Active.ParentTab == Tab
-                Tab.SubTabStrip.Visible = Open
+            if Tab.SubTabStrip and not Tab.Destroyed then
+                local Open = Active ~= nil and Active.ParentTab == Tab and Tab.Button.Visible
+                local _, Count = GetVisibleSection(Tab)
+                local ShowStrip = Open and Count >= (if IconRail.Visible then 2 else 1)
+                local Inset = if ShowStrip then TabBarHeight + 6 else 0
+                Tab.SubTabStrip.Visible = ShowStrip
                 Tab.SubHolder.Visible = Open
-                Tab:SetSelected(Open)
+                Tab.SubHolder.Position = UDim2.fromOffset(0, Inset)
+                Tab.SubHolder.Size = UDim2.new(1, 0, 1, -Inset)
+                local Selected = IsWithinTab(Active, Tab)
+                if Tab.Selected ~= Selected then
+                    Tab:SetSelected(Selected)
+                end
             end
         end
         SyncIconRail()
+    end
+
+    local function OpenNavigationFallback(Module)
+        if Library.Unloaded then
+            return
+        end
+        if Module and not Module.Destroyed and Module.Button.Visible then
+            Module:Show()
+            return
+        end
+        local First
+        for _, Tab in Library.Tabs do
+            if not Tab.ParentTab and not Tab.Destroyed and Tab.Button and Tab.Button.Visible
+                and (not First or Tab.Button.LayoutOrder < First.Button.LayoutOrder) then
+                First = Tab
+            end
+        end
+        if First then
+            First:Show()
+        else
+            SyncSubTabStrips()
+        end
     end
 
     function Window:AddTab(...)
@@ -16112,7 +16174,8 @@ function Library:CreateWindow(WindowInfo)
             --// Top tabs carry a muted fill and a thin active underline.
             local Pill = Selected and (not TabBar or WindowInfo.TabLayout == "Top")
             if _TabEntry.Underline then
-                _TabEntry.Underline.Visible = Selected and WindowInfo.TabLayout == "Top"
+                local IsHeaderLevel = if IconRail.Visible then ParentTab ~= nil else ParentTab == nil
+                _TabEntry.Underline.Visible = Selected and WindowInfo.TabLayout == "Top" and IsHeaderLevel
             end
             TweenService:Create(TabButton, Library.TweenInfo, {
                 BackgroundTransparency = Pill and 0 or 1,
@@ -16136,18 +16199,9 @@ function Library:CreateWindow(WindowInfo)
         end
 
         function Tab:Show()
-            --// A parent opens its last used (or first visible) sub-tab instead of its own page
-            if #Tab.SubTabs > 0 then
-                local SubTab = Tab.ActiveSubTab
-                if not (SubTab and SubTab.Button.Visible) then
-                    SubTab = Tab.SubTabs[1]
-                    for _, Candidate in Tab.SubTabs do
-                        if Candidate.Button.Visible then
-                            SubTab = Candidate
-                            break
-                        end
-                    end
-                end
+            --// A module restores its last visible section, or shows its own page if there are none.
+            local SubTab = GetVisibleSection(Tab)
+            if SubTab then
                 SubTab:Show()
                 return
             end
@@ -16157,28 +16211,31 @@ function Library:CreateWindow(WindowInfo)
             end
 
             if Library.ActiveTab then
-                Library.ActiveTab:Hide()
+                Library.ActiveTab:Hide(true)
             end
 
             Tab:SetSelected(true)
 
             Window:ShowTabInfo(Name, Description, if ParentTab then ParentTab.Name elseif Category then Category.Name else nil)
 
-            Library:PlayTabAnimation(Tab, true)
-            Tab:RefreshSides()
-
             Library.ActiveTab = Tab
-            if ParentTab then
-                ParentTab.ActiveSubTab = Tab
+            local Child = Tab
+            local Module = ParentTab
+            while Module do
+                Module.ActiveSubTab = Child
+                Child = Module
+                Module = Module.ParentTab
             end
             SyncSubTabStrips()
+            Library:PlayTabAnimation(Tab, true)
+            Tab:RefreshSides()
 
             if Library.Searching then
                 Library:UpdateSearch(Library.SearchText)
             end
         end
 
-        function Tab:Hide()
+        function Tab:Hide(DeferNavigation)
             Tab:SetSelected(false)
 
             Library:PlayTabAnimation(Tab, false)
@@ -16186,7 +16243,9 @@ function Library:CreateWindow(WindowInfo)
 
             Library.PreviousTab = Tab
             Library.ActiveTab = nil
-            SyncIconRail()
+            if not DeferNavigation then
+                SyncSubTabStrips()
+            end
         end
 
         --// Adds a tab inside this one; its button sits in a strip above the content while this tab is open
@@ -16245,6 +16304,8 @@ function Library:CreateWindow(WindowInfo)
             --// The parent was showing its own (empty) page; move onto the new sub-tab
             if Library.ActiveTab == Tab then
                 SubTab:Show()
+            else
+                SyncSubTabStrips()
             end
 
             return SubTab
@@ -16253,8 +16314,11 @@ function Library:CreateWindow(WindowInfo)
         function Tab:SetVisible(Visible: boolean)
             TabButton.Visible = Visible
 
-            if not Visible and Library.ActiveTab == Tab then
-                Tab:Hide()
+            if not Visible and IsWithinTab(Library.ActiveTab, Tab) then
+                Library.ActiveTab:Hide(true)
+                OpenNavigationFallback(ParentTab)
+            else
+                SyncSubTabStrips()
             end
         end
 
@@ -16277,7 +16341,11 @@ function Library:CreateWindow(WindowInfo)
         end
 
         function Tab:Destroy()
+            local Reopen = not Library.Unloaded and IsWithinTab(Library.ActiveTab, Tab)
             Tab.Destroyed = true
+            if Reopen then
+                Library.ActiveTab:Hide(true)
+            end
 
             for _, SubTab in table.clone(Tab.SubTabs) do
                 SubTab:Destroy()
@@ -16343,6 +16411,11 @@ function Library:CreateWindow(WindowInfo)
             end
 
             Library.Tabs[TabKey] = nil
+            if Reopen then
+                OpenNavigationFallback(ParentTab)
+            elseif not Library.Unloaded then
+                SyncSubTabStrips()
+            end
         end
 
         --// Execution \\--
@@ -16851,7 +16924,7 @@ function Library:CreateWindow(WindowInfo)
             end
 
             if Library.ActiveTab then
-                Library.ActiveTab:Hide()
+                Library.ActiveTab:Hide(true)
             end
 
             TweenService:Create(TabButton, Library.TweenInfo, {
@@ -16884,7 +16957,7 @@ function Library:CreateWindow(WindowInfo)
             end
         end
 
-        function Tab:Hide()
+        function Tab:Hide(DeferNavigation)
             TweenService:Create(TabButton, Library.TweenInfo, {
                 BackgroundTransparency = 1,
             }):Play()
@@ -16906,14 +16979,17 @@ function Library:CreateWindow(WindowInfo)
 
             Library.PreviousTab = Tab
             Library.ActiveTab = nil
-            SyncIconRail()
+            if not DeferNavigation then
+                SyncSubTabStrips()
+            end
         end
 
         function Tab:SetVisible(Visible: boolean)
             TabButton.Visible = Visible
 
             if not Visible and Library.ActiveTab == Tab then
-                Tab:Hide()
+                Tab:Hide(true)
+                OpenNavigationFallback(nil)
             end
         end
 
@@ -17115,7 +17191,7 @@ function Library:CreateWindow(WindowInfo)
             end
 
             if Library.ActiveTab then
-                Library.ActiveTab:Hide()
+                Library.ActiveTab:Hide(true)
             end
 
             TweenService:Create(TabButton, Library.TweenInfo, {
@@ -17143,14 +17219,14 @@ function Library:CreateWindow(WindowInfo)
             end
 
             Library.ActiveTab = Tab
-            SyncIconRail()
+            SyncSubTabStrips()
 
             if Library.Searching then
                 Library:UpdateSearch(Library.SearchText)
             end
         end
 
-        function Tab:Hide()
+        function Tab:Hide(DeferNavigation)
             TweenService:Create(TabButton, Library.TweenInfo, {
                 BackgroundTransparency = 1,
             }):Play()
@@ -17174,14 +17250,17 @@ function Library:CreateWindow(WindowInfo)
 
             Library.PreviousTab = Tab
             Library.ActiveTab = nil
-            SyncIconRail()
+            if not DeferNavigation then
+                SyncSubTabStrips()
+            end
         end
 
         function Tab:SetVisible(Visible: boolean)
             TabButton.Visible = Visible
 
             if not Visible and Library.ActiveTab == Tab then
-                Tab:Hide()
+                Tab:Hide(true)
+                OpenNavigationFallback(nil)
             end
         end
 
